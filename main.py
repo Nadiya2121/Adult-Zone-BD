@@ -1,4 +1,4 @@
-import os, io, time, hmac, hashlib, json, random, asyncio, urllib.parse
+import os, io, time, hmac, hashlib, json, random, asyncio, urllib.parse, base64
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 
@@ -14,11 +14,13 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BufferedInputFile
+from aiogram.exceptions import TelegramForbiddenError
 
 from db import (
     init_db, get_settings, users_col, videos_col,
-    unlocks_col, trending_col, bot_msgs_col, settings_col
+    unlocks_col, trending_col, bot_msgs_col, settings_col,
+    analytics_col, requests_col, support_col
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -33,6 +35,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 FEED_CACHE = {"data": None, "expires": 0}
+LEADERBOARD_CACHE = {"data": None, "expires": 0}
 AD_SESSIONS = {}
 UPLOAD_LOCK = asyncio.Lock()
 
@@ -40,13 +43,27 @@ def clear_feed_cache():
     FEED_CACHE["data"] = None
     FEED_CACHE["expires"] = 0
 
-# ---------------- FSM STATES FOR ZERO-COMMAND UPLOAD ----------------
+# ---------------- FSM STATES ----------------
 class UploadState(StatesGroup):
     waiting_type = State()
     waiting_thumb = State()
     waiting_title = State()
     waiting_existing_select = State()
     batch_parts = State()
+
+class SupportReplyState(StatesGroup):
+    waiting_reply = State()
+
+# ---------------- HELPER: ANALYTICS TRACKER ----------------
+async def track_analytics(method: str):
+    key_map = {"ad": "monetag", "monetag": "monetag", "direct": "direct", "coin": "coin", "coin_all": "coin", "share": "share", "vip": "vip"}
+    field = key_map.get(method, "other")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    await analytics_col.update_one(
+        {"date": today},
+        {"$inc": {field: 1}},
+        upsert=True
+    )
 
 # ---------------- HELPER: BLUR 16:9 THUMBNAIL + IMGBB ----------------
 async def process_and_upload_thumb(file_id: str) -> str:
@@ -132,7 +149,7 @@ async def log_bot_msg(chat_id: int, message_id: int):
         "delete_at": datetime.now(timezone.utc) + timedelta(hours=hours)
     })
 
-# ---------------- HELPER: AUTO FORCE JOIN CHECK (ONLY CHANNEL IDs) ----------------
+# ---------------- HELPER: AUTO FORCE JOIN CHECK ----------------
 async def get_missing_channels(uid: int, cfg: dict) -> list:
     missing = []
     for raw_ch in cfg.get("force_channels", []):
@@ -155,7 +172,7 @@ async def get_missing_channels(uid: int, cfg: dict) -> list:
             pass
     return missing
 
-# ---------------- HELPER: DELIVER VIDEO OR FORCE JOIN IN BOT DM ----------------
+# ---------------- HELPER: DELIVER VIDEO WITH BACKUP BOT FAILOVER ----------------
 async def deliver_or_force_join(uid: int, vid: dict, part: dict, cfg: dict):
     vid_id = str(vid["_id"])
     missing = await get_missing_channels(uid, cfg)
@@ -168,11 +185,15 @@ async def deliver_or_force_join(uid: int, vid: dict, part: dict, cfg: dict):
             f"🎞️ <b>{vid['title']} - {part['title']}</b>\n\n"
             f"🔒 ভিডিওটি পেতে নিচের চ্যানেলে জয়েন করে <b>জয়েন করেছি</b> বাটনে ক্লিক করুন 👇"
         )
-        if vid.get("thumbnail"):
-            sent = await bot.send_photo(uid, photo=vid["thumbnail"], caption=cap, parse_mode="HTML", reply_markup=kb)
-        else:
-            sent = await bot.send_message(uid, text=cap, parse_mode="HTML", reply_markup=kb)
-        await log_bot_msg(uid, sent.message_id)
+        try:
+            if vid.get("thumbnail"):
+                sent = await bot.send_photo(uid, photo=vid["thumbnail"], caption=cap, parse_mode="HTML", reply_markup=kb)
+            else:
+                sent = await bot.send_message(uid, text=cap, parse_mode="HTML", reply_markup=kb)
+            await log_bot_msg(uid, sent.message_id)
+        except TelegramForbiddenError:
+            await users_col.update_one({"user_id": uid}, {"$set": {"is_blocked": True}})
+            raise
         return
 
     del_hours = cfg.get("auto_delete_hours", 6)
@@ -181,17 +202,41 @@ async def deliver_or_force_join(uid: int, vid: dict, part: dict, cfg: dict):
     dm_btns = [[InlineKeyboardButton(text="🟢 আরও ভিডিও দেখুন", web_app=WebAppInfo(url=MINI_APP_URL))]]
     if part["part_num"] < total_parts:
         dm_btns.append([InlineKeyboardButton(text=f"🟡 পরের পার্ট (Part {part['part_num'] + 1:02d})", web_app=WebAppInfo(url=f"{MINI_APP_URL}?vid={vid_id}"))])
+    kb = InlineKeyboardMarkup(inline_keyboard=dm_btns)
+    cap = f"🎬 <b>{vid['title']}</b>\n🎞️ <b>{part['title']}</b>{warn_txt}"
 
-    sent = await bot.copy_message(
-        chat_id=uid,
-        from_chat_id=STORAGE_CHANNEL_ID,
-        message_id=part["message_id"],
-        caption=f"🎬 <b>{vid['title']}</b>\n🎞️ <b>{part['title']}</b>{warn_txt}",
-        parse_mode="HTML",
-        protect_content=vid.get("protect_content", True),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=dm_btns)
-    )
-    await log_bot_msg(uid, sent.message_id)
+    try:
+        sent = await bot.copy_message(
+            chat_id=uid,
+            from_chat_id=STORAGE_CHANNEL_ID,
+            message_id=part["message_id"],
+            caption=cap,
+            parse_mode="HTML",
+            protect_content=vid.get("protect_content", True),
+            reply_markup=kb
+        )
+        await log_bot_msg(uid, sent.message_id)
+    except TelegramForbiddenError:
+        await users_col.update_one({"user_id": uid}, {"$set": {"is_blocked": True}})
+        raise
+    except Exception as primary_err:
+        # Backup Bot Failover Support
+        backup_token = cfg.get("backup_bot_token", "").strip()
+        if not backup_token:
+            raise primary_err
+        b_bot = Bot(token=backup_token)
+        try:
+            await b_bot.copy_message(
+                chat_id=uid,
+                from_chat_id=STORAGE_CHANNEL_ID,
+                message_id=part["message_id"],
+                caption=cap,
+                parse_mode="HTML",
+                protect_content=vid.get("protect_content", True),
+                reply_markup=kb
+            )
+        finally:
+            await b_bot.session.close()
 
 # ---------------- HELPER: 4-BUTTON START KEYBOARD ----------------
 def build_start_keyboard(cfg: dict, vid_id: str = None) -> InlineKeyboardMarkup:
@@ -219,14 +264,28 @@ async def cmd_start(message: types.Message, state: FSMContext):
     args = message.text.split()
     payload = args[1] if len(args) > 1 else ""
 
+    # Parse Referral & Viral Combo Payload (e.g. ref_123 OR vid_ABC_ref_123)
     ref_by = None
-    if payload.startswith("ref_"):
+    target_vid_id = None
+    if "_ref_" in payload:
+        parts = payload.split("_ref_")
+        if parts[0].startswith("vid_"):
+            target_vid_id = parts[0].replace("vid_", "")
+        try:
+            r_id = int(parts[1])
+            if r_id != uid:
+                ref_by = r_id
+        except:
+            pass
+    elif payload.startswith("ref_"):
         try:
             r_id = int(payload.replace("ref_", ""))
             if r_id != uid:
                 ref_by = r_id
         except:
             pass
+    elif payload.startswith("vid_"):
+        target_vid_id = payload.replace("vid_", "")
 
     cfg = await get_settings()
     existing = await users_col.find_one({"user_id": uid})
@@ -239,32 +298,41 @@ async def cmd_start(message: types.Message, state: FSMContext):
             "coins": 0,
             "vip_until": None,
             "referred_by": ref_by,
+            "weekly_refs": 0,
+            "total_refs": 0,
+            "completed_tasks": [],
+            "is_blocked": False,
             "last_checkin": None,
             "last_active": now,
             "created_at": now
         })
         if ref_by:
-            await users_col.update_one({"user_id": ref_by}, {"$inc": {"coins": cfg.get("referral_coin_reward", 20)}})
+            await users_col.update_one(
+                {"user_id": ref_by},
+                {"$inc": {"coins": cfg.get("referral_coin_reward", 20), "weekly_refs": 1, "total_refs": 1}}
+            )
+            LEADERBOARD_CACHE["data"] = None
     else:
-        await users_col.update_one({"user_id": uid}, {"$set": {"last_active": now, "name": message.from_user.full_name}})
+        await users_col.update_one(
+            {"user_id": uid},
+            {"$set": {"last_active": now, "name": message.from_user.full_name, "is_blocked": False}}
+        )
 
-    if payload.startswith("vid_"):
-        vid_id = payload.replace("vid_", "")
-        if ObjectId.is_valid(vid_id):
-            vid = await videos_col.find_one({"_id": ObjectId(vid_id)})
-            if vid:
-                kb = build_start_keyboard(cfg, vid_id=vid_id)
-                cap = (
-                    f"🎬 <b>{vid['title']}</b>\n"
-                    f"🎞️ <b>মোট পার্ট:</b> {len(vid.get('parts', [])):02d}\n\n"
-                    f"👇 নিচের <b>Watch Now</b> বাটনে ক্লিক করে ভিডিওটি দেখুন ও ডাউনলোড করুন:"
-                )
-                if vid.get("thumbnail"):
-                    sent = await message.answer_photo(vid["thumbnail"], caption=cap, parse_mode="HTML", reply_markup=kb)
-                else:
-                    sent = await message.answer(cap, parse_mode="HTML", reply_markup=kb)
-                await log_bot_msg(uid, sent.message_id)
-                return
+    if target_vid_id and ObjectId.is_valid(target_vid_id):
+        vid = await videos_col.find_one({"_id": ObjectId(target_vid_id)})
+        if vid:
+            kb = build_start_keyboard(cfg, vid_id=target_vid_id)
+            cap = (
+                f"🎬 <b>{vid['title']}</b>\n"
+                f"🎞️ <b>মোট পার্ট:</b> {len(vid.get('parts', [])):02d}\n\n"
+                f"👇 নিচের <b>Watch Now</b> বাটনে ক্লিক করে ভিডিওটি দেখুন ও ডাউনলোড করুন:"
+            )
+            if vid.get("thumbnail"):
+                sent = await message.answer_photo(vid["thumbnail"], caption=cap, parse_mode="HTML", reply_markup=kb)
+            else:
+                sent = await message.answer(cap, parse_mode="HTML", reply_markup=kb)
+            await log_bot_msg(uid, sent.message_id)
+            return
 
     app_name = cfg.get("app_name", "VideoVault")
     kb = build_start_keyboard(cfg)
@@ -307,13 +375,49 @@ async def cb_my_ref(call: types.CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🚀 বন্ধুদের শেয়ার করুন", url=share_url)]])
     sent = await call.message.answer(
         f"🎁 <b>আপনার রেফারেল লিংক:</b>\n<code>{ref_link}</code>\n\n"
-        f"প্রতিটি সফল রেফারে আপনি পাবেন <b>+{reward} কয়েন</b>! কয়েন দিয়ে VIP কিনে বিজ্ঞাপন ছাড়াই ভিডিও দেখতে পারবেন।",
+        f"প্রতিটি সফল রেফারে আপনি পাবেন <b>+{reward} কয়েন</b> ও লিডারবোর্ড পয়েন্ট!",
         parse_mode="HTML", reply_markup=kb
     )
     await log_bot_msg(uid, sent.message_id)
     await call.answer()
 
-# Zero-Command Admin Video Upload (With Concurrency Lock)
+# ---------------- ADMIN SUPPORT REPLY HANDLERS ----------------
+@dp.callback_query(F.data.startswith("sup_reply_"))
+async def cb_sup_reply(call: types.CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    target_uid = int(call.data.replace("sup_reply_", ""))
+    await state.set_state(SupportReplyState.waiting_reply)
+    await state.update_data(reply_uid=target_uid)
+    await call.message.reply(f"✍️ ইউজার <code>{target_uid}</code>-কে পাঠানোর জন্য আপনার উত্তর (টেক্সট বা ছবি) লিখুন:", parse_mode="HTML")
+    await call.answer()
+
+@dp.message(SupportReplyState.waiting_reply)
+async def handle_admin_support_reply(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    data = await state.get_data()
+    target_uid = data.get("reply_uid")
+    await state.clear()
+    try:
+        if message.photo:
+            await bot.send_photo(
+                target_uid,
+                photo=message.photo[-1].file_id,
+                caption=f"💬 <b>সাপোর্ট উত্তর:</b>\n\n{message.caption or ''}",
+                parse_mode="HTML"
+            )
+        else:
+            await bot.send_message(
+                target_uid,
+                text=f"💬 <b>সাপোর্ট উত্তর:</b>\n\n{message.text or ''}",
+                parse_mode="HTML"
+            )
+        await message.reply("✅ আপনার উত্তরটি ইউজারের কাছে সফলভাবে পাঠানো হয়েছে!")
+    except Exception as e:
+        await message.reply(f"❌ পাঠানো যায়নি: {e}")
+
+# ---------------- ZERO-COMMAND ADMIN VIDEO UPLOAD ----------------
 @dp.message(F.video | F.document)
 async def handle_admin_video(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -537,11 +641,13 @@ async def api_auth(request: Request):
         user = {
             "user_id": uid, "name": tg_user.get("first_name", "User"),
             "username": tg_user.get("username", ""), "coins": 0,
-            "vip_until": None, "last_checkin": None, "last_active": now, "created_at": now
+            "vip_until": None, "weekly_refs": 0, "total_refs": 0,
+            "completed_tasks": [], "is_blocked": False,
+            "last_checkin": None, "last_active": now, "created_at": now
         }
         await users_col.insert_one(user)
     else:
-        await users_col.update_one({"user_id": uid}, {"$set": {"last_active": now}})
+        await users_col.update_one({"user_id": uid}, {"$set": {"last_active": now, "is_blocked": False}})
 
     cfg = await get_settings()
     is_vip = bool(user.get("vip_until") and user["vip_until"].replace(tzinfo=timezone.utc) > now)
@@ -549,16 +655,26 @@ async def api_auth(request: Request):
         "user": {
             "id": uid, "name": user["name"], "coins": user.get("coins", 0),
             "is_vip": is_vip, "vip_until": user["vip_until"].isoformat() if is_vip else None,
+            "weekly_refs": user.get("weekly_refs", 0),
+            "completed_tasks": user.get("completed_tasks", []),
             "ref_link": f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
         },
         "config": {
             "app_name": cfg.get("app_name", "VideoVault"),
+            "bot_username": BOT_USERNAME,
             "welcome_notice": cfg.get("welcome_notice", "✨ প্রিমিয়াম ভিডিও লাইব্রেরিতে আপনাকে স্বাগতম!"),
             "monetag_zone_id": cfg.get("monetag_zone_id", ""),
             "has_direct_links": len(cfg.get("direct_links", [])) > 0,
             "ad_timer": cfg.get("ad_timer", 15),
             "vip_coin_price": cfg.get("vip_coin_price", 50),
-            "daily_coin_reward": cfg.get("daily_coin_reward", 10)
+            "unlock_all_coin_price": cfg.get("unlock_all_coin_price", 30),
+            "daily_coin_reward": cfg.get("daily_coin_reward", 10),
+            "share_unlock_enabled": cfg.get("share_unlock_enabled", True),
+            "maintenance_mode": cfg.get("maintenance_mode", False),
+            "maintenance_msg": cfg.get("maintenance_msg", "🔧 সার্ভার আপডেট চলছে!"),
+            "contest_prize": cfg.get("contest_prize", ""),
+            "contest_end_date": cfg.get("contest_end_date", ""),
+            "tasks": cfg.get("tasks", [])
         }
     }
 
@@ -607,14 +723,28 @@ async def api_video_detail(vid_id: str, x_init_data: str = Header("")):
         raise HTTPException(404, "Video not found")
     user_unlocks = await unlocks_col.find({"user_id": uid, "video_id": vid_id}).to_list(200)
     unlocked_parts = {u["part_num"] for u in user_unlocks}
-    parts = [{"part_num": p["part_num"], "title": p["title"], "size": p.get("file_size", 0), "unlocked": p["part_num"] in unlocked_parts} for p in vid.get("parts", [])]
-    return {"id": str(vid["_id"]), "title": vid["title"], "thumbnail": vid.get("thumbnail", ""), "views": vid.get("views", 0), "parts": parts}
+    all_unlocked = 0 in unlocked_parts
+    parts = [
+        {
+            "part_num": p["part_num"], "title": p["title"],
+            "size": p.get("file_size", 0),
+            "unlocked": all_unlocked or (p["part_num"] in unlocked_parts)
+        }
+        for p in vid.get("parts", [])
+    ]
+    return {
+        "id": str(vid["_id"]), "title": vid["title"],
+        "thumbnail": vid.get("thumbnail", ""), "views": vid.get("views", 0),
+        "all_unlocked": all_unlocked, "parts": parts
+    }
 
 @app.post("/api/unlock/direct-link")
 async def api_get_direct_link(request: Request):
     body = await request.json()
     tg_user = verify_telegram_init_data(body.get("initData", ""))
     cfg = await get_settings()
+    if cfg.get("maintenance_mode"):
+        raise HTTPException(503, cfg.get("maintenance_msg", "Maintenance Mode Active"))
     links = cfg.get("direct_links", [])
     if not links:
         raise HTTPException(400, "No direct links configured")
@@ -627,22 +757,42 @@ async def api_unlock_complete(request: Request):
     tg_user = verify_telegram_init_data(body.get("initData", ""))
     uid = tg_user["id"]
     vid_id = body.get("video_id")
-    part_num = int(body.get("part_num"))
+    part_num = int(body.get("part_num", 0))
     method = body.get("method", "ad")
+
+    cfg = await get_settings()
+    if cfg.get("maintenance_mode"):
+        raise HTTPException(503, cfg.get("maintenance_msg", "Maintenance Mode Active"))
 
     vid = await videos_col.find_one({"_id": ObjectId(vid_id)})
     if not vid:
         raise HTTPException(404, "Video not found")
+
+    now = datetime.now(timezone.utc)
+    user = await users_col.find_one({"user_id": uid})
+    exp_hours = cfg.get("unlock_expiry_hours", 24)
+
+    # 1-Click Unlock All Parts
+    if method == "coin_all":
+        price = cfg.get("unlock_all_coin_price", 30)
+        res = await users_col.update_one({"user_id": uid, "coins": {"$gte": price}}, {"$inc": {"coins": -price}})
+        if res.modified_count == 0:
+            raise HTTPException(400, f"সব পার্ট আনলক করতে {price} কয়েন প্রয়োজন!")
+        await unlocks_col.update_one(
+            {"user_id": uid, "video_id": vid_id, "part_num": 0},
+            {"$set": {"expires_at": now + timedelta(hours=exp_hours)}},
+            upsert=True
+        )
+        await track_analytics("coin")
+        return {"ok": True, "all_unlocked": True, "coins": user.get("coins", 0) - price}
+
     part = next((p for p in vid.get("parts", []) if p["part_num"] == part_num), None)
     if not part:
         raise HTTPException(404, "Part not found")
 
-    now = datetime.now(timezone.utc)
-    user = await users_col.find_one({"user_id": uid})
-    cfg = await get_settings()
     is_vip = bool(user.get("vip_until") and user["vip_until"].replace(tzinfo=timezone.utc) > now)
+    already = await unlocks_col.find_one({"user_id": uid, "video_id": vid_id, "part_num": {"$in": [part_num, 0]}})
 
-    already = await unlocks_col.find_one({"user_id": uid, "video_id": vid_id, "part_num": part_num})
     if not already and not is_vip:
         if method == "direct":
             req_sec = cfg.get("ad_timer", 15)
@@ -651,14 +801,16 @@ async def api_unlock_complete(request: Request):
                 raise HTTPException(400, f"⚠️ আপনি বিজ্ঞাপনটি {req_sec} সেকেন্ড দেখেননি! পুনরায় চেষ্টা করুন।")
             AD_SESSIONS.pop(uid, None)
         elif method == "coin":
-            if user.get("coins", 0) < 10:
+            res = await users_col.update_one({"user_id": uid, "coins": {"$gte": 10}}, {"$inc": {"coins": -10}})
+            if res.modified_count == 0:
                 raise HTTPException(400, "পর্যাপ্ত কয়েন নেই (১০ কয়েন প্রয়োজন)")
-            await users_col.update_one({"user_id": uid}, {"$inc": {"coins": -10}})
-        exp_hours = cfg.get("unlock_expiry_hours", 24)
         await unlocks_col.insert_one({
             "user_id": uid, "video_id": vid_id, "part_num": part_num,
             "expires_at": now + timedelta(hours=exp_hours)
         })
+        await track_analytics(method)
+    elif is_vip and not already:
+        await track_analytics("vip")
 
     await videos_col.update_one({"_id": ObjectId(vid_id)}, {"$inc": {"views": 1}})
     await trending_col.insert_one({"video_id": vid_id, "created_at": now})
@@ -690,14 +842,97 @@ async def api_buy_vip(request: Request):
     uid = tg_user["id"]
     cfg = await get_settings()
     price = cfg.get("vip_coin_price", 50)
-    user = await users_col.find_one({"user_id": uid})
-    if user.get("coins", 0) < price:
+    res = await users_col.update_one({"user_id": uid, "coins": {"$gte": price}}, {"$inc": {"coins": -price}})
+    if res.modified_count == 0:
         raise HTTPException(400, f"VIP কিনতে {price} কয়েন প্রয়োজন!")
+    user = await users_col.find_one({"user_id": uid})
     now = datetime.now(timezone.utc)
     base = user["vip_until"].replace(tzinfo=timezone.utc) if (user.get("vip_until") and user["vip_until"].replace(tzinfo=timezone.utc) > now) else now
     new_vip = base + timedelta(days=1)
-    await users_col.update_one({"user_id": uid}, {"$inc": {"coins": -price}, "$set": {"vip_until": new_vip}})
-    return {"vip_until": new_vip.isoformat(), "coins": user.get("coins", 0) - price}
+    await users_col.update_one({"user_id": uid}, {"$set": {"vip_until": new_vip}})
+    return {"vip_until": new_vip.isoformat(), "coins": user.get("coins", 0)}
+
+@app.post("/api/task/complete")
+async def api_task_complete(request: Request):
+    body = await request.json()
+    tg_user = verify_telegram_init_data(body.get("initData", ""))
+    uid = tg_user["id"]
+    task_id = body.get("task_id")
+    cfg = await get_settings()
+    task = next((t for t in cfg.get("tasks", []) if t.get("id") == task_id), None)
+    if not task:
+        raise HTTPException(404, "টাস্ক পাওয়া যায়নি!")
+    reward = int(task.get("reward", 10))
+    res = await users_col.update_one(
+        {"user_id": uid, "completed_tasks": {"$ne": task_id}},
+        {"$push": {"completed_tasks": task_id}, "$inc": {"coins": reward}}
+    )
+    if res.modified_count == 0:
+        raise HTTPException(400, "আপনি এই টাস্কটি আগেই সম্পন্ন করেছেন!")
+    user = await users_col.find_one({"user_id": uid})
+    return {"coins": user.get("coins", 0), "reward": reward, "completed_tasks": user.get("completed_tasks", [])}
+
+@app.get("/api/leaderboard")
+async def api_leaderboard():
+    if LEADERBOARD_CACHE["data"] and time.time() < LEADERBOARD_CACHE["expires"]:
+        return LEADERBOARD_CACHE["data"]
+    top_users = await users_col.find({"weekly_refs": {"$gt": 0}}).sort("weekly_refs", -1).limit(10).to_list(10)
+    data = [{"name": u.get("name", "User")[:18], "refs": u.get("weekly_refs", 0)} for u in top_users]
+    LEADERBOARD_CACHE["data"] = data
+    LEADERBOARD_CACHE["expires"] = time.time() + 60
+    return data
+
+@app.post("/api/request-video")
+async def api_request_video(request: Request):
+    body = await request.json()
+    tg_user = verify_telegram_init_data(body.get("initData", ""))
+    title = (body.get("title") or "").strip()
+    if len(title) < 2:
+        raise HTTPException(400, "ভিডিওর নাম সঠিকভাবে লিখুন!")
+    doc = {
+        "user_id": tg_user["id"],
+        "name": tg_user.get("first_name", "User"),
+        "title": title[:120],
+        "created_at": datetime.now(timezone.utc)
+    }
+    await requests_col.insert_one(doc)
+    for aid in ADMIN_IDS[:1]:
+        try:
+            await bot.send_message(aid, f"📩 <b>নতুন ভিডিও রিকোয়েস্ট!</b>\n\n🎬 নাম: <b>{doc['title']}</b>\n👤 ইউজার: {doc['name']} (<code>{doc['user_id']}</code>)", parse_mode="HTML")
+        except:
+            pass
+    return {"ok": True}
+
+@app.post("/api/support")
+async def api_support(request: Request):
+    body = await request.json()
+    tg_user = verify_telegram_init_data(body.get("initData", ""))
+    uid = tg_user["id"]
+    msg_text = (body.get("message") or "").strip()
+    photo_b64 = body.get("photo_base64", "")
+    if not msg_text and not photo_b64:
+        raise HTTPException(400, "অনুগ্রহ করে সমস্যা লিখুন অথবা ছবি দিন!")
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="↩️ ইউজারকে উত্তর দিন", callback_data=f"sup_reply_{uid}")
+    ]])
+    header = f"💬 <b>নতুন সাপোর্ট মেসেজ!</b>\n👤 ইউজার: {tg_user.get('first_name', 'User')} (<code>{uid}</code>)\n\n{msg_text}"
+
+    sent_ok = False
+    for aid in ADMIN_IDS:
+        try:
+            if photo_b64 and "," in photo_b64:
+                raw_bytes = base64.b64decode(photo_b64.split(",", 1)[1])
+                sent = await bot.send_photo(aid, photo=BufferedInputFile(raw_bytes, filename="support.jpg"), caption=header, parse_mode="HTML", reply_markup=kb)
+            else:
+                sent = await bot.send_message(aid, text=header, parse_mode="HTML", reply_markup=kb)
+            await support_col.insert_one({"user_id": uid, "admin_msg_id": sent.message_id, "created_at": datetime.now(timezone.utc)})
+            sent_ok = True
+        except Exception as e:
+            print("Support forward error:", e)
+    if not sent_ok:
+        raise HTTPException(500, "সাপোর্টে পাঠানো সম্ভব হয়নি!")
+    return {"ok": True}
 
 # ---------------- WEB ADMIN PANEL APIS ----------------
 @app.get("/api/admin/stats")
@@ -707,14 +942,28 @@ async def admin_stats(x_admin_pass: str = Header(None)):
     total_users = await users_col.count_documents({})
     live_online = await users_col.count_documents({"last_active": {"$gte": now - timedelta(minutes=5)}})
     active_24h = await users_col.count_documents({"last_active": {"$gte": now - timedelta(hours=24)}})
+    blocked_users = await users_col.count_documents({"is_blocked": True})
     total_videos = await videos_col.count_documents({})
     trending_24h = await trending_col.count_documents({})
+
+    today = now.strftime("%Y-%m-%d")
+    today_ad = await analytics_col.find_one({"date": today}) or {}
+    recent_ads = await analytics_col.find().sort("date", -1).limit(7).to_list(7)
+    ad_7d = {
+        "monetag": sum(x.get("monetag", 0) for x in recent_ads),
+        "direct": sum(x.get("direct", 0) for x in recent_ads),
+        "coin": sum(x.get("coin", 0) for x in recent_ads),
+        "share": sum(x.get("share", 0) for x in recent_ads)
+    }
     return {
-        "total_users": total_users,
-        "live_online": live_online,
-        "active_24h": active_24h,
-        "total_videos": total_videos,
-        "unlocks_24h": trending_24h
+        "total_users": total_users, "live_online": live_online,
+        "active_24h": active_24h, "blocked_users": blocked_users,
+        "total_videos": total_videos, "unlocks_24h": trending_24h,
+        "ad_today": {
+            "monetag": today_ad.get("monetag", 0), "direct": today_ad.get("direct", 0),
+            "coin": today_ad.get("coin", 0), "share": today_ad.get("share", 0)
+        },
+        "ad_7d": ad_7d
     }
 
 @app.get("/api/admin/settings")
@@ -727,7 +976,7 @@ async def admin_save_settings(request: Request, x_admin_pass: str = Header(None)
     verify_admin(x_admin_pass)
     data = await request.json()
     data.pop("_id", None)
-    await settings_col.update_one({"_id": "global"}, {"$set": data})
+    await settings_col.update_one({"_id": "global"}, {"$set": data}, upsert=True)
     clear_feed_cache()
     return {"ok": True}
 
@@ -752,16 +1001,38 @@ async def admin_toggle_protect(vid_id: str, x_admin_pass: str = Header(None)):
     await videos_col.update_one({"_id": ObjectId(vid_id)}, {"$set": {"protect_content": new_val}})
     return {"protect": new_val}
 
+@app.get("/api/admin/requests")
+async def admin_list_requests(x_admin_pass: str = Header(None)):
+    verify_admin(x_admin_pass)
+    reqs = await requests_col.find().sort("created_at", -1).limit(30).to_list(30)
+    return [{"id": str(r["_id"]), "name": r.get("name", "User"), "title": r.get("title", ""), "date": r["created_at"].strftime("%d %b")} for r in reqs]
+
+@app.delete("/api/admin/request/{req_id}")
+async def admin_delete_request(req_id: str, x_admin_pass: str = Header(None)):
+    verify_admin(x_admin_pass)
+    await requests_col.delete_one({"_id": ObjectId(req_id)})
+    return {"ok": True}
+
+@app.post("/api/admin/reset-contest")
+async def admin_reset_contest(x_admin_pass: str = Header(None)):
+    verify_admin(x_admin_pass)
+    await users_col.update_many({}, {"$set": {"weekly_refs": 0}})
+    LEADERBOARD_CACHE["data"] = None
+    return {"ok": True}
+
 async def do_broadcast(text: str, photo_url: str):
-    cursor = users_col.find({}, {"user_id": 1})
+    cursor = users_col.find({"is_blocked": {"$ne": True}}, {"user_id": 1})
     async for u in cursor:
+        uid = u["user_id"]
         try:
             if photo_url:
-                sent = await bot.send_photo(u["user_id"], photo=photo_url, caption=text, parse_mode="HTML")
+                sent = await bot.send_photo(uid, photo=photo_url, caption=text, parse_mode="HTML")
             else:
-                sent = await bot.send_message(u["user_id"], text=text, parse_mode="HTML")
-            await log_bot_msg(u["user_id"], sent.message_id)
+                sent = await bot.send_message(uid, text=text, parse_mode="HTML")
+            await log_bot_msg(uid, sent.message_id)
             await asyncio.sleep(0.05)
+        except TelegramForbiddenError:
+            await users_col.update_one({"user_id": uid}, {"$set": {"is_blocked": True}})
         except:
             pass
 
@@ -770,4 +1041,31 @@ async def admin_broadcast(request: Request, bg: BackgroundTasks, x_admin_pass: s
     verify_admin(x_admin_pass)
     body = await request.json()
     bg.add_task(do_broadcast, body.get("text", ""), body.get("photo", ""))
-    return {"ok": True, "message": "Broadcast started in background"}
+    return {"ok": True, "message": "Broadcast started"}
+
+async def do_wakeup(days: int, custom_msg: str):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔥 নতুন ভিডিও দেখুন", web_app=WebAppInfo(url=MINI_APP_URL))
+    ]])
+    cursor = users_col.find({"is_blocked": {"$ne": True}, "last_active": {"$lte": cutoff}}, {"user_id": 1})
+    async for u in cursor:
+        uid = u["user_id"]
+        try:
+            sent = await bot.send_message(uid, text=custom_msg, parse_mode="HTML", reply_markup=kb)
+            await log_bot_msg(uid, sent.message_id)
+            await asyncio.sleep(0.05)
+        except TelegramForbiddenError:
+            await users_col.update_one({"user_id": uid}, {"$set": {"is_blocked": True}})
+        except:
+            pass
+
+@app.post("/api/admin/wakeup")
+async def admin_wakeup(request: Request, bg: BackgroundTasks, x_admin_pass: str = Header(None)):
+    verify_admin(x_admin_pass)
+    body = await request.json()
+    cfg = await get_settings()
+    days = int(body.get("days") or cfg.get("wakeup_days", 3))
+    msg = body.get("text") or "🔥 অনেক দিন পর আমাদের অ্যাপে দারুণ সব নতুন ভিডিও এসেছে! এখনি দেখে নিন 👇"
+    bg.add_task(do_wakeup, days, msg)
+    return {"ok": True}
