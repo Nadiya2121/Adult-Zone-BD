@@ -27,9 +27,15 @@
     </header>
 
     <!-- Stats -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div class="glass p-4 rounded-2xl border-emerald-500/30">
+        <div class="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> লাইভ অনলাইন
+        </div>
+        <div id="stLive" class="text-2xl font-bold text-emerald-400 mt-1">0</div>
+      </div>
       <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">মোট ইউজার</div><div id="stUsers" class="text-2xl font-bold text-cyan-400 mt-1">0</div></div>
-      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">অ্যাক্টিভ (২৪ ঘণ্টা)</div><div id="stActive" class="text-2xl font-bold text-emerald-400 mt-1">0</div></div>
+      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">অ্যাক্টিভ (২৪ ঘণ্টা)</div><div id="stActive" class="text-2xl font-bold text-teal-400 mt-1">0</div></div>
       <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">মোট ভিডিও</div><div id="stVideos" class="text-2xl font-bold text-purple-400 mt-1">0</div></div>
       <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">আনলক (২৪ ঘণ্টা)</div><div id="stUnlocks" class="text-2xl font-bold text-amber-400 mt-1">0</div></div>
     </div>
@@ -48,7 +54,7 @@
       <div class="grid sm:grid-cols-2 gap-3 text-sm">
         <div><label class="text-xs text-gray-400">App Name</label><input id="sAppName" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Welcome Notice (মিনি অ্যাপের শুরুতে দেখাবে)</label><input id="sNotice" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Monetag Zone ID</label><input id="sMonetag" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Monetag Zone ID (১টি ID-তেই অটো ভিডিও অ্যাড চলবে)</label><input id="sMonetag" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Ad Timer (Seconds - সব জায়গায় অটো আপডেট হবে)</label><input id="sTimer" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Unlock Expiry (Hours)</label><input id="sExpiry" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">VIP Price (Coins / 1 Day)</label><input id="sVipPrice" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
@@ -69,8 +75,8 @@
         <textarea id="sDirectLinks" rows="3" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm"></textarea>
       </div>
       <div>
-        <label class="text-xs text-gray-400">Force Join Channels (JSON Format: [{"id":"@ch","name":"Main","url":"https://t.me/ch"}])</label>
-        <textarea id="sForceCh" rows="2" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs font-mono"></textarea>
+        <label class="text-xs text-gray-400">Force Join Channel IDs (প্রতি লাইনে শুধু Channel ID বা @username দিন — বটকে চ্যানেলে Admin রাখবেন)</label>
+        <textarea id="sForceCh" rows="3" placeholder="-1001234567890&#10;@mychannel" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm font-mono"></textarea>
       </div>
       <button onclick="saveSettings()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-black font-bold text-sm">💾 Save All Settings</button>
     </div>
@@ -83,7 +89,7 @@
   </div>
 
 <script>
-let PASS = "";
+let PASS = "", statsTimer = null;
 async function admApi(url, method="GET", body=null) {
   const opts = { method, headers: { "Content-Type": "application/json", "x-admin-pass": PASS } };
   if (body) opts.body = JSON.stringify(body);
@@ -98,16 +104,24 @@ async function login() {
     await loadAll();
     document.getElementById("loginBox").classList.add("hidden");
     document.getElementById("dash").classList.remove("hidden");
+    clearInterval(statsTimer);
+    statsTimer = setInterval(refreshStatsOnly, 20000);
   } catch { alert("ভুল পাসওয়ার্ড!"); }
 }
 
-async function loadAll() {
-  const st = await admApi("/api/admin/stats");
-  document.getElementById("stUsers").innerText = st.total_users;
-  document.getElementById("stActive").innerText = st.active_24h;
-  document.getElementById("stVideos").innerText = st.total_videos;
-  document.getElementById("stUnlocks").innerText = st.unlocks_24h;
+async function refreshStatsOnly() {
+  try {
+    const st = await admApi("/api/admin/stats");
+    document.getElementById("stLive").innerText = st.live_online || 0;
+    document.getElementById("stUsers").innerText = st.total_users;
+    document.getElementById("stActive").innerText = st.active_24h;
+    document.getElementById("stVideos").innerText = st.total_videos;
+    document.getElementById("stUnlocks").innerText = st.unlocks_24h;
+  } catch {}
+}
 
+async function loadAll() {
+  await refreshStatsOnly();
   const s = await admApi("/api/admin/settings");
   document.getElementById("sAppName").value = s.app_name || "";
   document.getElementById("sNotice").value = s.welcome_notice || "";
@@ -127,7 +141,7 @@ async function loadAll() {
   document.getElementById("sReqName").value = s.request_channel_name || "🟡 রিকোয়েস্ট চ্যানেল";
   document.getElementById("sReqUrl").value = s.request_channel_url || "";
   document.getElementById("sDirectLinks").value = (s.direct_links || []).join("\n");
-  document.getElementById("sForceCh").value = JSON.stringify(s.force_channels || []);
+  document.getElementById("sForceCh").value = (s.force_channels || []).map(x => typeof x === "string" ? x : x.id).join("\n");
 
   const vids = await admApi("/api/admin/videos");
   document.getElementById("vidList").innerHTML = vids.map(v => `
@@ -143,8 +157,6 @@ async function loadAll() {
 }
 
 async function saveSettings() {
-  let fc = [];
-  try { fc = JSON.parse(document.getElementById("sForceCh").value || "[]"); } catch { return alert("Force Channel JSON ভুল আছে!"); }
   await admApi("/api/admin/settings", "POST", {
     app_name: document.getElementById("sAppName").value,
     welcome_notice: document.getElementById("sNotice").value,
@@ -164,7 +176,7 @@ async function saveSettings() {
     request_channel_name: document.getElementById("sReqName").value,
     request_channel_url: document.getElementById("sReqUrl").value.trim(),
     direct_links: document.getElementById("sDirectLinks").value.split("\n").map(x => x.trim()).filter(Boolean),
-    force_channels: fc
+    force_channels: document.getElementById("sForceCh").value.split("\n").map(x => x.trim()).filter(Boolean)
   });
   alert("✅ সেটিংস সেভ হয়েছে!");
 }
