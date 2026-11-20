@@ -32,7 +32,6 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Smart RAM Cache & Anti-Cheat Sessions
 FEED_CACHE = {"data": None, "expires": 0}
 AD_SESSIONS = {}
 
@@ -132,6 +131,67 @@ async def log_bot_msg(chat_id: int, message_id: int):
         "delete_at": datetime.now(timezone.utc) + timedelta(hours=hours)
     })
 
+# ---------------- HELPER: AUTO FORCE JOIN CHECK (ONLY CHANNEL IDs) ----------------
+async def get_missing_channels(uid: int, cfg: dict) -> list:
+    missing = []
+    for raw_ch in cfg.get("force_channels", []):
+        ch_id = raw_ch["id"] if isinstance(raw_ch, dict) else str(raw_ch).strip()
+        if not ch_id:
+            continue
+        target = int(ch_id) if (ch_id.startswith("-100") or ch_id.lstrip("-").isdigit()) else ch_id
+        try:
+            member = await bot.get_chat_member(target, uid)
+            if member.status in ["left", "kicked"]:
+                chat = await bot.get_chat(target)
+                url = f"https://t.me/{chat.username}" if chat.username else (chat.invite_link or "")
+                if not url:
+                    try:
+                        url = await bot.export_chat_invite_link(target)
+                    except:
+                        url = f"https://t.me/{BOT_USERNAME}"
+                missing.append({"id": ch_id, "name": chat.title or "আমাদের চ্যানেল", "url": url})
+        except Exception:
+            pass
+    return missing
+
+# ---------------- HELPER: DELIVER VIDEO OR FORCE JOIN IN BOT DM ----------------
+async def deliver_or_force_join(uid: int, vid: dict, part: dict, cfg: dict):
+    vid_id = str(vid["_id"])
+    missing = await get_missing_channels(uid, cfg)
+    if missing:
+        btns = [[InlineKeyboardButton(text=f"🔵 {ch['name']} (Join)", url=ch["url"])] for ch in missing]
+        btns.append([InlineKeyboardButton(text="🟢 ✅ জয়েন করেছি — ভিডিও নিন", callback_data=f"verify_fj_{vid_id}_{part['part_num']}")])
+        kb = InlineKeyboardMarkup(inline_keyboard=btns)
+        cap = (
+            f"🎬 <b>আপনার ভিডিওটি আনলক হয়েছে!</b>\n"
+            f"🎞️ <b>{vid['title']} - {part['title']}</b>\n\n"
+            f"🔒 ভিডিওটি পেতে নিচের চ্যানেলে জয়েন করে <b>জয়েন করেছি</b> বাটনে ক্লিক করুন 👇"
+        )
+        if vid.get("thumbnail"):
+            sent = await bot.send_photo(uid, photo=vid["thumbnail"], caption=cap, parse_mode="HTML", reply_markup=kb)
+        else:
+            sent = await bot.send_message(uid, text=cap, parse_mode="HTML", reply_markup=kb)
+        await log_bot_msg(uid, sent.message_id)
+        return
+
+    del_hours = cfg.get("auto_delete_hours", 6)
+    warn_txt = f"\n\n⚠️ <i>সতর্কতা: এই ভিডিওটি আগামী {del_hours} ঘণ্টা পর অটোমেটিক ডিলিট হয়ে যাবে। তার আগেই দেখে নিন!</i>" if del_hours > 0 else ""
+    total_parts = len(vid.get("parts", []))
+    dm_btns = [[InlineKeyboardButton(text="🟢 আরও ভিডিও দেখুন", web_app=WebAppInfo(url=MINI_APP_URL))]]
+    if part["part_num"] < total_parts:
+        dm_btns.append([InlineKeyboardButton(text=f"🟡 পরের পার্ট (Part {part['part_num'] + 1:02d})", web_app=WebAppInfo(url=f"{MINI_APP_URL}?vid={vid_id}"))])
+
+    sent = await bot.copy_message(
+        chat_id=uid,
+        from_chat_id=STORAGE_CHANNEL_ID,
+        message_id=part["message_id"],
+        caption=f"🎬 <b>{vid['title']}</b>\n🎞️ <b>{part['title']}</b>{warn_txt}",
+        parse_mode="HTML",
+        protect_content=vid.get("protect_content", True),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=dm_btns)
+    )
+    await log_bot_msg(uid, sent.message_id)
+
 # ---------------- HELPER: 4-BUTTON START KEYBOARD ----------------
 def build_start_keyboard(cfg: dict, vid_id: str = None) -> InlineKeyboardMarkup:
     app_url = f"{MINI_APP_URL}?vid={vid_id}" if vid_id else MINI_APP_URL
@@ -187,7 +247,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     else:
         await users_col.update_one({"user_id": uid}, {"$set": {"last_active": now, "name": message.from_user.full_name}})
 
-    # If user clicked Watch Now from Notification Channel
     if payload.startswith("vid_"):
         vid_id = payload.replace("vid_", "")
         if ObjectId.is_valid(vid_id):
@@ -214,6 +273,28 @@ async def cmd_start(message: types.Message, state: FSMContext):
         parse_mode="HTML", reply_markup=kb
     )
     await log_bot_msg(uid, sent.message_id)
+
+@dp.callback_query(F.data.startswith("verify_fj_"))
+async def cb_verify_fj(call: types.CallbackQuery):
+    parts_data = call.data.split("_")
+    vid_id, part_num = parts_data[2], int(parts_data[3])
+    uid = call.from_user.id
+    cfg = await get_settings()
+    missing = await get_missing_channels(uid, cfg)
+    if missing:
+        await call.answer("⚠️ আপনি এখনো চ্যানেলে জয়েন করেননি! আগে জয়েন করুন।", show_alert=True)
+        return
+    vid = await videos_col.find_one({"_id": ObjectId(vid_id)})
+    part = next((p for p in vid.get("parts", []) if p["part_num"] == part_num), None) if vid else None
+    if not vid or not part:
+        await call.answer("ভিডিও পাওয়া যায়নি!", show_alert=True)
+        return
+    try:
+        await call.message.delete()
+    except:
+        pass
+    await deliver_or_force_join(uid, vid, part, cfg)
+    await call.answer("✅ ভেরিফাই সফল!")
 
 @dp.callback_query(F.data == "my_ref")
 async def cb_my_ref(call: types.CallbackQuery):
@@ -475,14 +556,12 @@ async def api_auth(request: Request):
             "has_direct_links": len(cfg.get("direct_links", [])) > 0,
             "ad_timer": cfg.get("ad_timer", 15),
             "vip_coin_price": cfg.get("vip_coin_price", 50),
-            "daily_coin_reward": cfg.get("daily_coin_reward", 10),
-            "force_channels": cfg.get("force_channels", [])
+            "daily_coin_reward": cfg.get("daily_coin_reward", 10)
         }
     }
 
 @app.get("/api/videos")
 async def api_videos(q: str = "", page: int = 1):
-    # Fast RAM Cache for Page 1 Home Feed
     if page == 1 and not q and FEED_CACHE["data"] and time.time() < FEED_CACHE["expires"]:
         return FEED_CACHE["data"]
 
@@ -528,22 +607,6 @@ async def api_video_detail(vid_id: str, x_init_data: str = Header("")):
     unlocked_parts = {u["part_num"] for u in user_unlocks}
     parts = [{"part_num": p["part_num"], "title": p["title"], "size": p.get("file_size", 0), "unlocked": p["part_num"] in unlocked_parts} for p in vid.get("parts", [])]
     return {"id": str(vid["_id"]), "title": vid["title"], "thumbnail": vid.get("thumbnail", ""), "views": vid.get("views", 0), "parts": parts}
-
-@app.post("/api/check-join")
-async def api_check_join(request: Request):
-    body = await request.json()
-    tg_user = verify_telegram_init_data(body.get("initData", ""))
-    uid = tg_user["id"]
-    cfg = await get_settings()
-    not_joined = []
-    for ch in cfg.get("force_channels", []):
-        try:
-            member = await bot.get_chat_member(ch["id"], uid)
-            if member.status in ["left", "kicked"]:
-                not_joined.append(ch)
-        except:
-            pass
-    return {"joined": len(not_joined) == 0, "missing": not_joined}
 
 @app.post("/api/unlock/direct-link")
 async def api_get_direct_link(request: Request):
@@ -598,25 +661,8 @@ async def api_unlock_complete(request: Request):
     await videos_col.update_one({"_id": ObjectId(vid_id)}, {"$inc": {"views": 1}})
     await trending_col.insert_one({"video_id": vid_id, "created_at": now})
 
-    # Auto-delete warning + Action buttons in Bot DM
-    del_hours = cfg.get("auto_delete_hours", 6)
-    warn_txt = f"\n\n⚠️ <i>সতর্কতা: এই ভিডিওটি আগামী {del_hours} ঘণ্টা পর অটোমেটিক ডিলিট হয়ে যাবে। তার আগেই দেখে নিন!</i>" if del_hours > 0 else ""
-    total_parts = len(vid.get("parts", []))
-    dm_btns = [[InlineKeyboardButton(text="🟢 আরও ভিডিও দেখুন", web_app=WebAppInfo(url=MINI_APP_URL))]]
-    if part_num < total_parts:
-        dm_btns.append([InlineKeyboardButton(text=f"🟡 পরের পার্ট (Part {part_num + 1:02d})", web_app=WebAppInfo(url=f"{MINI_APP_URL}?vid={vid_id}"))])
-
     try:
-        sent = await bot.copy_message(
-            chat_id=uid,
-            from_chat_id=STORAGE_CHANNEL_ID,
-            message_id=part["message_id"],
-            caption=f"🎬 <b>{vid['title']}</b>\n🎞️ <b>{part['title']}</b>{warn_txt}",
-            parse_mode="HTML",
-            protect_content=vid.get("protect_content", True),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=dm_btns)
-        )
-        await log_bot_msg(uid, sent.message_id)
+        await deliver_or_force_join(uid, vid, part, cfg)
     except Exception:
         raise HTTPException(400, "প্রথমে বটে /start দিন যাতে বট আপনাকে মেসেজ পাঠাতে পারে!")
 
