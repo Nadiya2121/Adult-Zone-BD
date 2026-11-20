@@ -21,54 +21,135 @@
 
   <!-- Dashboard -->
   <div id="dash" class="hidden space-y-6">
-    <header class="flex justify-between items-center">
+    <header class="flex flex-wrap justify-between items-center gap-3">
       <h1 class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">⚡ VideoVault Admin</h1>
-      <button onclick="loadAll()" class="px-4 py-2 rounded-xl bg-white/10 text-xs font-bold">🔄 Refresh</button>
+      <div class="flex items-center gap-2">
+        <button id="maintBtn" onclick="toggleMaintenance()" class="px-4 py-2 rounded-xl bg-white/10 text-xs font-bold border border-white/10">🚧 Maintenance: OFF</button>
+        <button onclick="loadAll()" class="px-4 py-2 rounded-xl bg-white/10 text-xs font-bold">🔄 Refresh</button>
+      </div>
     </header>
 
-    <!-- Stats -->
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+    <!-- Live & User Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-6 gap-3">
       <div class="glass p-4 rounded-2xl border-emerald-500/30">
         <div class="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> লাইভ অনলাইন
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> লাইভ
         </div>
         <div id="stLive" class="text-2xl font-bold text-emerald-400 mt-1">0</div>
       </div>
       <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">মোট ইউজার</div><div id="stUsers" class="text-2xl font-bold text-cyan-400 mt-1">0</div></div>
-      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">অ্যাক্টিভ (২৪ ঘণ্টা)</div><div id="stActive" class="text-2xl font-bold text-teal-400 mt-1">0</div></div>
+      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">অ্যাক্টিভ (২৪ঘ)</div><div id="stActive" class="text-2xl font-bold text-teal-400 mt-1">0</div></div>
+      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">ব্লকড (স্কিপড)</div><div id="stBlocked" class="text-2xl font-bold text-rose-400 mt-1">0</div></div>
       <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">মোট ভিডিও</div><div id="stVideos" class="text-2xl font-bold text-purple-400 mt-1">0</div></div>
-      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">আনলক (২৪ ঘণ্টা)</div><div id="stUnlocks" class="text-2xl font-bold text-amber-400 mt-1">0</div></div>
+      <div class="glass p-4 rounded-2xl"><div class="text-xs text-gray-400">আনলক (২৪ঘ)</div><div id="stUnlocks" class="text-2xl font-bold text-amber-400 mt-1">0</div></div>
     </div>
 
-    <!-- Broadcast -->
+    <!-- Ad Revenue & Click Analytics -->
     <div class="glass p-5 rounded-2xl space-y-3">
-      <h2 class="font-bold text-base text-pink-400">📢 ইউজার ব্রডকাস্ট (অটো-ডিলিট সাপোর্টেড)</h2>
-      <input id="bcPhoto" placeholder="ছবির লিংক (ঐচ্ছিক)" class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm"/>
-      <textarea id="bcText" rows="3" placeholder="ব্রডকাস্ট মেসেজ লিখুন (HTML সাপোর্টেড)..." class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm"></textarea>
-      <button onclick="sendBroadcast()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 font-bold text-sm">🚀 Send Broadcast</button>
+      <h2 class="font-bold text-base text-cyan-400">📊 অ্যাড ও আনলক অ্যানালিটিক্স (আজ / গত ৭ দিন)</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+        <div class="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
+          <div class="text-xs text-purple-300">📺 Monetag</div>
+          <div id="anMonetag" class="text-lg font-extrabold text-white mt-1">0 / 0</div>
+        </div>
+        <div class="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+          <div class="text-xs text-cyan-300">🔗 Direct Link</div>
+          <div id="anDirect" class="text-lg font-extrabold text-white mt-1">0 / 0</div>
+        </div>
+        <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+          <div class="text-xs text-amber-300">🪙 Coins</div>
+          <div id="anCoin" class="text-lg font-extrabold text-white mt-1">0 / 0</div>
+        </div>
+        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+          <div class="text-xs text-emerald-300">📤 Share Unlock</div>
+          <div id="anShare" class="text-lg font-extrabold text-white mt-1">0 / 0</div>
+        </div>
+      </div>
     </div>
 
-    <!-- Settings -->
+    <!-- Broadcast & Inactive Wake-up -->
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="glass p-5 rounded-2xl space-y-3">
+        <h2 class="font-bold text-base text-pink-400">📢 ইউজার ব্রডকাস্ট (ব্লকড স্কিপ + অটো-ডিলিট)</h2>
+        <input id="bcPhoto" placeholder="ছবির লিংক (ঐচ্ছিক)" class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm"/>
+        <textarea id="bcText" rows="3" placeholder="ব্রডকাস্ট মেসেজ লিখুন (HTML সাপোর্টেড)..." class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm"></textarea>
+        <button onclick="sendBroadcast()" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 font-bold text-sm">🚀 Send Broadcast</button>
+      </div>
+
+      <div class="glass p-5 rounded-2xl space-y-3">
+        <h2 class="font-bold text-base text-amber-400">🔔 ঘুমন্ত ইউজার ফিরিয়ে আনা (Wake-Up)</h2>
+        <div class="flex items-center gap-2 text-xs text-gray-300">
+          <span>কত দিন অ্যাক্টিভ না থাকলে মেসেজ যাবে:</span>
+          <input id="wuDays" type="number" value="3" class="w-20 px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/10 text-sm"/>
+        </div>
+        <textarea id="wuText" rows="3" placeholder="ঘুমন্ত ইউজারদের মেসেজ..." class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-sm">🔥 অনেক দিন পর আমাদের অ্যাপে দারুণ সব নতুন ভিডিও এসেছে! এখনি দেখে নিন 👇</textarea>
+        <button onclick="sendWakeup()" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-bold text-sm">🔔 Send Wake-Up Alert</button>
+      </div>
+    </div>
+
+    <!-- Video Requests Box -->
+    <div class="glass p-5 rounded-2xl space-y-3">
+      <h2 class="font-bold text-base text-purple-400">📩 ইউজারদের ভিডিও রিকোয়েস্ট</h2>
+      <div id="reqList" class="space-y-2 max-h-60 overflow-y-auto"></div>
+    </div>
+
+    <!-- Task Center & Weekly Contest -->
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="glass p-5 rounded-2xl space-y-3">
+        <h2 class="font-bold text-base text-emerald-400">🎯 Earn Coins Task Center</h2>
+        <div class="space-y-2 text-xs">
+          <input id="tTitle" placeholder="টাস্কের নাম (যেমন: গ্রুপে জয়েন করুন)" class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10"/>
+          <div class="flex gap-2">
+            <input id="tUrl" placeholder="লিংক (https://t.me/...)" class="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/>
+            <input id="tReward" type="number" placeholder="কয়েন" value="15" class="w-20 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/>
+          </div>
+          <button onclick="addTask()" class="w-full py-2 rounded-xl bg-emerald-500 text-black font-bold">+ Add Task</button>
+        </div>
+        <div id="taskAdminList" class="space-y-1.5 pt-2"></div>
+      </div>
+
+      <div class="glass p-5 rounded-2xl space-y-3">
+        <h2 class="font-bold text-base text-amber-400">🏆 সাপ্তাহিক রেফারেল কনটেস্ট</h2>
+        <div class="space-y-2 text-xs">
+          <label class="text-gray-400">পুরস্কার (Prize Text)</label>
+          <input id="sContestPrize" class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10"/>
+          <label class="text-gray-400">শেষ তারিখ (যেমন: ৩০ নভেম্বর)</label>
+          <input id="sContestEnd" class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10"/>
+        </div>
+        <button onclick="resetContest()" class="w-full py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 font-bold text-xs">🔄 নতুন সপ্তাহের জন্য কনটেস্ট রিসেট করুন</button>
+      </div>
+    </div>
+
+    <!-- All Settings -->
     <div class="glass p-5 rounded-2xl space-y-4">
-      <h2 class="font-bold text-base text-cyan-400">⚙️ বিজ্ঞাপন, চ্যানেল, নোটিশ ও অটো-ক্লিন সেটিংস</h2>
+      <h2 class="font-bold text-base text-cyan-400">⚙️ বিজ্ঞাপন, চ্যানেল, নোটিশ ও সিস্টেম সেটিংস</h2>
       <div class="grid sm:grid-cols-2 gap-3 text-sm">
         <div><label class="text-xs text-gray-400">App Name</label><input id="sAppName" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Welcome Notice (মিনি অ্যাপের শুরুতে দেখাবে)</label><input id="sNotice" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Monetag Zone ID (১টি ID-তেই অটো ভিডিও অ্যাড চলবে)</label><input id="sMonetag" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Ad Timer (Seconds - সব জায়গায় অটো আপডেট হবে)</label><input id="sTimer" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Welcome Notice</label><input id="sNotice" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Monetag Zone ID</label><input id="sMonetag" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Ad Timer (Seconds)</label><input id="sTimer" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Unlock Expiry (Hours)</label><input id="sExpiry" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">VIP Price (Coins / 1 Day)</label><input id="sVipPrice" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Unlock All Parts Price (Coins)</label><input id="sAllPrice" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Share to Unlock</label>
+          <select id="sShareEnable" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10">
+            <option value="true">🟢 ON (চালু)</option>
+            <option value="false">🔴 OFF (বন্ধ)</option>
+          </select>
+        </div>
         <div><label class="text-xs text-gray-400">Bot Auto-Delete (Hours)</label><input id="sAutoDel" type="number" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Backup Bot Token (Failover - ঐচ্ছিক)</label><input id="sBackupToken" placeholder="123456:ABC..." class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Maintenance Message</label><input id="sMaintMsg" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Notification Channel ID (-100...)</label><input id="sNotifCh" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Watch Button Text</label><input id="sWatchTxt" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Tutorial Button Text</label><input id="sTutTxt" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Tutorial Video Link</label><input id="sTutUrl" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Custom Channel Button Text (Notification)</label><input id="sCustTxt" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
         <div><label class="text-xs text-gray-400">Custom Channel Link (Notification)</label><input id="sCustUrl" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Bot Start: Main Channel Name</label><input id="sMainName" placeholder="🔵 মেইন চ্যানেল" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Bot Start: Main Channel Link</label><input id="sMainUrl" placeholder="https://t.me/..." class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Bot Start: Request Channel Name</label><input id="sReqName" placeholder="🟡 রিকোয়েস্ট চ্যানেল" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
-        <div><label class="text-xs text-gray-400">Bot Start: Request Channel Link</label><input id="sReqUrl" placeholder="https://t.me/..." class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Bot Start: Main Channel Name</label><input id="sMainName" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Bot Start: Main Channel Link</label><input id="sMainUrl" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Bot Start: Request Channel Name</label><input id="sReqName" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
+        <div><label class="text-xs text-gray-400">Bot Start: Request Channel Link</label><input id="sReqUrl" class="w-full mt-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10"/></div>
       </div>
       <div>
         <label class="text-xs text-gray-400">Direct Links (প্রতি লাইনে একটি করে আনলিমিটেড লিংক দিন - র‍্যান্ডমলি ওপেন হবে)</label>
@@ -89,7 +170,12 @@
   </div>
 
 <script>
-let PASS = "", statsTimer = null;
+let PASS = "", statsTimer = null, MAINT_MODE = false, TASKS_ARR = [];
+
+function esc(str) {
+  return String(str || "").replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+}
+
 async function admApi(url, method="GET", body=null) {
   const opts = { method, headers: { "Content-Type": "application/json", "x-admin-pass": PASS } };
   if (body) opts.body = JSON.stringify(body);
@@ -115,21 +201,53 @@ async function refreshStatsOnly() {
     document.getElementById("stLive").innerText = st.live_online || 0;
     document.getElementById("stUsers").innerText = st.total_users;
     document.getElementById("stActive").innerText = st.active_24h;
+    document.getElementById("stBlocked").innerText = st.blocked_users || 0;
     document.getElementById("stVideos").innerText = st.total_videos;
     document.getElementById("stUnlocks").innerText = st.unlocks_24h;
+
+    document.getElementById("anMonetag").innerText = `${st.ad_today.monetag} / ${st.ad_7d.monetag}`;
+    document.getElementById("anDirect").innerText = `${st.ad_today.direct} / ${st.ad_7d.direct}`;
+    document.getElementById("anCoin").innerText = `${st.ad_today.coin} / ${st.ad_7d.coin}`;
+    document.getElementById("anShare").innerText = `${st.ad_today.share} / ${st.ad_7d.share}`;
   } catch {}
+}
+
+function updateMaintBtn() {
+  const btn = document.getElementById("maintBtn");
+  btn.innerText = MAINT_MODE ? "🚧 Maintenance: ON" : "🚧 Maintenance: OFF";
+  btn.className = MAINT_MODE
+    ? "px-4 py-2 rounded-xl bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/40"
+    : "px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40";
+}
+
+async function toggleMaintenance() {
+  MAINT_MODE = !MAINT_MODE;
+  await admApi("/api/admin/settings", "POST", { maintenance_mode: MAINT_MODE });
+  updateMaintBtn();
 }
 
 async function loadAll() {
   await refreshStatsOnly();
   const s = await admApi("/api/admin/settings");
+  MAINT_MODE = Boolean(s.maintenance_mode);
+  updateMaintBtn();
+  TASKS_ARR = Array.isArray(s.tasks) ? s.tasks : [];
+  renderTaskAdmin();
+
   document.getElementById("sAppName").value = s.app_name || "";
   document.getElementById("sNotice").value = s.welcome_notice || "";
   document.getElementById("sMonetag").value = s.monetag_zone_id || "";
   document.getElementById("sTimer").value = s.ad_timer || 15;
   document.getElementById("sExpiry").value = s.unlock_expiry_hours || 24;
   document.getElementById("sVipPrice").value = s.vip_coin_price || 50;
+  document.getElementById("sAllPrice").value = s.unlock_all_coin_price || 30;
+  document.getElementById("sShareEnable").value = s.share_unlock_enabled === false ? "false" : "true";
   document.getElementById("sAutoDel").value = s.auto_delete_hours || 6;
+  document.getElementById("sBackupToken").value = s.backup_bot_token || "";
+  document.getElementById("sMaintMsg").value = s.maintenance_msg || "";
+  document.getElementById("sContestPrize").value = s.contest_prize || "";
+  document.getElementById("sContestEnd").value = s.contest_end_date || "";
+  document.getElementById("wuDays").value = s.wakeup_days || 3;
   document.getElementById("sNotifCh").value = s.notification_channel_id || "";
   document.getElementById("sWatchTxt").value = s.watch_btn_text || "";
   document.getElementById("sTutTxt").value = s.tutorial_btn_text || "";
@@ -143,10 +261,19 @@ async function loadAll() {
   document.getElementById("sDirectLinks").value = (s.direct_links || []).join("\n");
   document.getElementById("sForceCh").value = (s.force_channels || []).map(x => typeof x === "string" ? x : x.id).join("\n");
 
+  const reqs = await admApi("/api/admin/requests");
+  document.getElementById("reqList").innerHTML = reqs.length
+    ? reqs.map(r => `
+      <div class="p-3 rounded-xl bg-black/40 flex justify-between items-center text-xs">
+        <div><b>${esc(r.title)}</b> <span class="text-gray-400">by ${esc(r.name)} • ${r.date}</span></div>
+        <button onclick="delReq('${r.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400">✅ Done</button>
+      </div>`).join("")
+    : `<p class="text-xs text-gray-400">কোনো নতুন রিকোয়েস্ট নেই।</p>`;
+
   const vids = await admApi("/api/admin/videos");
   document.getElementById("vidList").innerHTML = vids.map(v => `
     <div class="p-3 rounded-xl bg-black/40 flex flex-wrap justify-between items-center gap-2 text-xs">
-      <div><b>${v.title}</b> (${v.parts} Parts • 👁 ${v.views})</div>
+      <div><b>${esc(v.title)}</b> (${v.parts} Parts • 👁 ${v.views})</div>
       <div class="flex gap-2">
         <button onclick="toggleProt('${v.id}')" class="px-3 py-1 rounded-lg ${v.protect ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}">
           ${v.protect ? '🔒 Forward OFF' : '🔓 Forward ON'}
@@ -154,6 +281,32 @@ async function loadAll() {
         <button onclick="delVid('${v.id}')" class="px-3 py-1 rounded-lg bg-rose-500/20 text-rose-400">🗑 Delete</button>
       </div>
     </div>`).join("");
+}
+
+function renderTaskAdmin() {
+  document.getElementById("taskAdminList").innerHTML = TASKS_ARR.map((t, i) => `
+    <div class="p-2 rounded-lg bg-black/40 flex justify-between items-center text-xs">
+      <span>${esc(t.title)} (+${t.reward} 🪙)</span>
+      <button onclick="removeTask(${i})" class="text-rose-400 px-2">🗑</button>
+    </div>`).join("");
+}
+
+async function addTask() {
+  const title = document.getElementById("tTitle").value.trim();
+  const url = document.getElementById("tUrl").value.trim();
+  const reward = Number(document.getElementById("tReward").value || 10);
+  if (!title) return alert("টাস্কের নাম দিন!");
+  TASKS_ARR.push({ id: "t_" + Date.now(), title, url, reward });
+  document.getElementById("tTitle").value = "";
+  document.getElementById("tUrl").value = "";
+  renderTaskAdmin();
+  await admApi("/api/admin/settings", "POST", { tasks: TASKS_ARR });
+}
+
+async function removeTask(idx) {
+  TASKS_ARR.splice(idx, 1);
+  renderTaskAdmin();
+  await admApi("/api/admin/settings", "POST", { tasks: TASKS_ARR });
 }
 
 async function saveSettings() {
@@ -164,7 +317,14 @@ async function saveSettings() {
     ad_timer: Number(document.getElementById("sTimer").value),
     unlock_expiry_hours: Number(document.getElementById("sExpiry").value),
     vip_coin_price: Number(document.getElementById("sVipPrice").value),
+    unlock_all_coin_price: Number(document.getElementById("sAllPrice").value),
+    share_unlock_enabled: document.getElementById("sShareEnable").value === "true",
     auto_delete_hours: Number(document.getElementById("sAutoDel").value),
+    backup_bot_token: document.getElementById("sBackupToken").value.trim(),
+    maintenance_msg: document.getElementById("sMaintMsg").value,
+    contest_prize: document.getElementById("sContestPrize").value,
+    contest_end_date: document.getElementById("sContestEnd").value,
+    wakeup_days: Number(document.getElementById("wuDays").value || 3),
     notification_channel_id: document.getElementById("sNotifCh").value.trim(),
     watch_btn_text: document.getElementById("sWatchTxt").value,
     tutorial_btn_text: document.getElementById("sTutTxt").value,
@@ -178,7 +338,7 @@ async function saveSettings() {
     direct_links: document.getElementById("sDirectLinks").value.split("\n").map(x => x.trim()).filter(Boolean),
     force_channels: document.getElementById("sForceCh").value.split("\n").map(x => x.trim()).filter(Boolean)
   });
-  alert("✅ সেটিংস সেভ হয়েছে!");
+  alert("✅ সব সেটিংস সেভ হয়েছে!");
 }
 
 async function sendBroadcast() {
@@ -186,9 +346,24 @@ async function sendBroadcast() {
     photo: document.getElementById("bcPhoto").value.trim(),
     text: document.getElementById("bcText").value
   });
-  alert("🚀 ব্রডকাস্ট শুরু হয়েছে!");
+  alert("🚀 ব্রডকাস্ট শুরু হয়েছে (ব্লকড ইউজার অটো স্কিপ হবে)!");
 }
 
+async function sendWakeup() {
+  await admApi("/api/admin/wakeup", "POST", {
+    days: Number(document.getElementById("wuDays").value || 3),
+    text: document.getElementById("wuText").value
+  });
+  alert("🔔 ঘুমন্ত ইউজারদের কাছে মেসেজ পাঠানো শুরু হয়েছে!");
+}
+
+async function resetContest() {
+  if (!confirm("সবাইয়ের সাপ্তাহিক রেফারেল পয়েন্ট ০ করে দেবেন?")) return;
+  await admApi("/api/admin/reset-contest", "POST");
+  alert("🏆 নতুন সপ্তাহের জন্য কনটেস্ট রিসেট হয়েছে!");
+}
+
+async function delReq(id) { await admApi(`/api/admin/request/${id}`, "DELETE"); loadAll(); }
 async function toggleProt(id) { await admApi(`/api/admin/video/${id}/protect`, "PATCH"); loadAll(); }
 async function delVid(id) { if(confirm("ডিলিট করবেন?")) { await admApi(`/api/admin/video/${id}`, "DELETE"); loadAll(); } }
 </script>
