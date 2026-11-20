@@ -1,4 +1,4 @@
-import os, io, hmac, hashlib, json, random, asyncio, urllib.parse
+import os, io, time, hmac, hashlib, json, random, asyncio, urllib.parse
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 
@@ -32,6 +32,14 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# Smart RAM Cache & Anti-Cheat Sessions
+FEED_CACHE = {"data": None, "expires": 0}
+AD_SESSIONS = {}
+
+def clear_feed_cache():
+    FEED_CACHE["data"] = None
+    FEED_CACHE["expires"] = 0
+
 # ---------------- FSM STATES FOR ZERO-COMMAND UPLOAD ----------------
 class UploadState(StatesGroup):
     waiting_type = State()
@@ -50,7 +58,6 @@ async def process_and_upload_thumb(file_id: str) -> str:
     img = Image.open(bio).convert("RGB")
     target_w, target_h = 1280, 720
 
-    # Create blurred background
     bg = img.copy()
     bg_ratio = max(target_w / bg.width, target_h / bg.height)
     bg = bg.resize((int(bg.width * bg_ratio), int(bg.height * bg_ratio)), Image.Resampling.LANCZOS)
@@ -58,7 +65,6 @@ async def process_and_upload_thumb(file_id: str) -> str:
     top = (bg.height - target_h) // 2
     bg = bg.crop((left, top, left + target_w, top + target_h)).filter(ImageFilter.GaussianBlur(28))
 
-    # Resize foreground without cropping
     fg_ratio = min(target_w / img.width, target_h / img.height)
     fg = img.resize((int(img.width * fg_ratio), int(img.height * fg_ratio)), Image.Resampling.LANCZOS)
     bg.paste(fg, ((target_w - fg.width) // 2, (target_h - fg.height) // 2))
@@ -92,7 +98,7 @@ async def send_channel_notification(video_doc: dict):
     buttons = [[
         InlineKeyboardButton(
             text=cfg.get("watch_btn_text", "🟢 Watch Now"),
-            url=f"https://t.me/{BOT_USERNAME}?startapp=vid_{vid_id}"
+            url=f"https://t.me/{BOT_USERNAME}?start=vid_{vid_id}"
         )
     ]]
     if cfg.get("tutorial_btn_url"):
@@ -126,25 +132,45 @@ async def log_bot_msg(chat_id: int, message_id: int):
         "delete_at": datetime.now(timezone.utc) + timedelta(hours=hours)
     })
 
+# ---------------- HELPER: 4-BUTTON START KEYBOARD ----------------
+def build_start_keyboard(cfg: dict, vid_id: str = None) -> InlineKeyboardMarkup:
+    app_url = f"{MINI_APP_URL}?vid={vid_id}" if vid_id else MINI_APP_URL
+    rows = [[
+        InlineKeyboardButton(text=cfg.get("watch_btn_text", "🟢 Watch Now"), web_app=WebAppInfo(url=app_url))
+    ]]
+    row2 = []
+    if cfg.get("main_channel_url"):
+        row2.append(InlineKeyboardButton(text=cfg.get("main_channel_name", "🔵 মেইন চ্যানেল"), url=cfg["main_channel_url"]))
+    if cfg.get("request_channel_url"):
+        row2.append(InlineKeyboardButton(text=cfg.get("request_channel_name", "🟡 রিকোয়েস্ট চ্যানেল"), url=cfg["request_channel_url"]))
+    if row2:
+        rows.append(row2)
+    rows.append([
+        InlineKeyboardButton(text="🎁 রেফারেল করুন (কয়েন আয়)", callback_data="my_ref")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 # ---------------- TELEGRAM BOT HANDLERS ----------------
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     uid = message.from_user.id
     args = message.text.split()
+    payload = args[1] if len(args) > 1 else ""
+
     ref_by = None
-    if len(args) > 1 and args[1].startswith("ref_"):
+    if payload.startswith("ref_"):
         try:
-            r_id = int(args[1].replace("ref_", ""))
+            r_id = int(payload.replace("ref_", ""))
             if r_id != uid:
                 ref_by = r_id
         except:
             pass
 
+    cfg = await get_settings()
     existing = await users_col.find_one({"user_id": uid})
     now = datetime.now(timezone.utc)
     if not existing:
-        cfg = await get_settings()
         await users_col.insert_one({
             "user_id": uid,
             "name": message.from_user.full_name,
@@ -152,27 +178,58 @@ async def cmd_start(message: types.Message, state: FSMContext):
             "coins": 0,
             "vip_until": None,
             "referred_by": ref_by,
-            "ref_rewarded": False,
             "last_checkin": None,
             "last_active": now,
             "created_at": now
         })
         if ref_by:
-            await users_col.update_one(
-                {"user_id": ref_by},
-                {"$inc": {"coins": cfg.get("referral_coin_reward", 20)}}
-            )
+            await users_col.update_one({"user_id": ref_by}, {"$inc": {"coins": cfg.get("referral_coin_reward", 20)}})
     else:
         await users_col.update_one({"user_id": uid}, {"$set": {"last_active": now, "name": message.from_user.full_name}})
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 Open VideoVault App", web_app=WebAppInfo(url=MINI_APP_URL))
-    ]])
+    # If user clicked Watch Now from Notification Channel
+    if payload.startswith("vid_"):
+        vid_id = payload.replace("vid_", "")
+        if ObjectId.is_valid(vid_id):
+            vid = await videos_col.find_one({"_id": ObjectId(vid_id)})
+            if vid:
+                kb = build_start_keyboard(cfg, vid_id=vid_id)
+                cap = (
+                    f"🎬 <b>{vid['title']}</b>\n"
+                    f"🎞️ <b>মোট পার্ট:</b> {len(vid.get('parts', [])):02d}\n\n"
+                    f"👇 নিচের <b>Watch Now</b> বাটনে ক্লিক করে ভিডিওটি দেখুন ও ডাউনলোড করুন:"
+                )
+                if vid.get("thumbnail"):
+                    sent = await message.answer_photo(vid["thumbnail"], caption=cap, parse_mode="HTML", reply_markup=kb)
+                else:
+                    sent = await message.answer(cap, parse_mode="HTML", reply_markup=kb)
+                await log_bot_msg(uid, sent.message_id)
+                return
+
+    app_name = cfg.get("app_name", "VideoVault")
+    kb = build_start_keyboard(cfg)
     sent = await message.answer(
-        f"👋 স্বাগতম <b>{message.from_user.first_name}</b>!\n\nনিচের বাটনে ক্লিক করে আমাদের প্রিমিয়াম ভিডিও লাইব্রেরি দেখুন 👇",
+        f"👋 স্বাগতম <b>{message.from_user.first_name}</b>!\n\n"
+        f"✨ <b>{app_name}</b>-এ আপনাকে স্বাগতম। নিচের বাটনে ক্লিক করে আপনার পছন্দের সব ভিডিও দেখুন 👇",
         parse_mode="HTML", reply_markup=kb
     )
     await log_bot_msg(uid, sent.message_id)
+
+@dp.callback_query(F.data == "my_ref")
+async def cb_my_ref(call: types.CallbackQuery):
+    uid = call.from_user.id
+    cfg = await get_settings()
+    reward = cfg.get("referral_coin_reward", 20)
+    ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(ref_link)}&text={urllib.parse.quote('🔥 দারুণ সব প্রিমিয়াম ভিডিও দেখতে এখনি জয়েন করুন!')}"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🚀 বন্ধুদের শেয়ার করুন", url=share_url)]])
+    sent = await call.message.answer(
+        f"🎁 <b>আপনার রেফারেল লিংক:</b>\n<code>{ref_link}</code>\n\n"
+        f"প্রতিটি সফল রেফারে আপনি পাবেন <b>+{reward} কয়েন</b>! কয়েন দিয়ে VIP কিনে বিজ্ঞাপন ছাড়াই ভিডিও দেখতে পারবেন।",
+        parse_mode="HTML", reply_markup=kb
+    )
+    await log_bot_msg(uid, sent.message_id)
+    await call.answer()
 
 # Zero-Command Admin Video Upload
 @dp.message(F.video | F.document)
@@ -186,7 +243,6 @@ async def handle_admin_video(message: types.Message, state: FSMContext):
     if message.document and not (message.document.mime_type or "").startswith("video"):
         return
 
-    # Copy to Storage Channel
     copied = await bot.copy_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=message.chat.id, message_id=message.message_id)
     part_data = {
         "file_id": media.file_id,
@@ -204,6 +260,7 @@ async def handle_admin_video(message: types.Message, state: FSMContext):
         part_data["part_num"] = next_num
         part_data["title"] = f"Part {next_num:02d}"
         await videos_col.update_one({"_id": vid_id}, {"$push": {"parts": part_data}})
+        clear_feed_cache()
         await message.reply(f"✅ <b>Part {next_num:02d}</b> যুক্ত হয়েছে! আরও ভিডিও পাঠান অথবা নিচের Done বাটনে চাপুন।", parse_mode="HTML")
         return
 
@@ -251,6 +308,7 @@ async def handle_title(message: types.Message, state: FSMContext):
     }
     res = await videos_col.insert_one(doc)
     doc["_id"] = res.inserted_id
+    clear_feed_cache()
     await state.update_data(target_vid_id=str(res.inserted_id))
     await state.set_state(UploadState.batch_parts)
 
@@ -282,6 +340,7 @@ async def cb_sel_vid(call: types.CallbackQuery, state: FSMContext):
     part["part_num"] = next_num
     part["title"] = f"Part {next_num:02d}"
     await videos_col.update_one({"_id": ObjectId(vid_id)}, {"$push": {"parts": part}})
+    clear_feed_cache()
     await state.update_data(target_vid_id=vid_id)
     await state.set_state(UploadState.batch_parts)
 
@@ -304,7 +363,6 @@ async def cb_finish_upload(call: types.CallbackQuery, state: FSMContext):
             await send_channel_notification(vid)
     await call.message.edit_text("🎉 সম্পন্ন হয়েছে! ভিডিও এবং নোটিফিকেশন লাইভ হয়ে গেছে।")
 
-# Auto-Clean Unwanted Messages in Bot Inbox
 @dp.message()
 async def cleanup_spam(message: types.Message):
     if message.from_user.id in ADMIN_IDS:
@@ -314,7 +372,7 @@ async def cleanup_spam(message: types.Message):
     except:
         pass
 
-# ---------------- BACKGROUND AUTO-DELETE LOOP ----------------
+# ---------------- BACKGROUND WORKERS ----------------
 async def auto_delete_worker():
     while True:
         try:
@@ -330,7 +388,6 @@ async def auto_delete_worker():
             print("AutoDelete Error:", e)
         await asyncio.sleep(60)
 
-# ---------------- KEEP-ALIVE SELF PING (প্রতি ৪ মিনিট পরপর) ----------------
 async def keep_alive_worker():
     await asyncio.sleep(30)
     while True:
@@ -342,7 +399,6 @@ async def keep_alive_worker():
                 pass
         await asyncio.sleep(240)
 
-# ---------------- FASTAPI APP & LIFESPAN ----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -414,6 +470,7 @@ async def api_auth(request: Request):
         },
         "config": {
             "app_name": cfg.get("app_name", "VideoVault"),
+            "welcome_notice": cfg.get("welcome_notice", "✨ প্রিমিয়াম ভিডিও লাইব্রেরিতে আপনাকে স্বাগতম!"),
             "monetag_zone_id": cfg.get("monetag_zone_id", ""),
             "has_direct_links": len(cfg.get("direct_links", [])) > 0,
             "ad_timer": cfg.get("ad_timer", 15),
@@ -425,11 +482,14 @@ async def api_auth(request: Request):
 
 @app.get("/api/videos")
 async def api_videos(q: str = "", page: int = 1):
+    # Fast RAM Cache for Page 1 Home Feed
+    if page == 1 and not q and FEED_CACHE["data"] and time.time() < FEED_CACHE["expires"]:
+        return FEED_CACHE["data"]
+
     skip = (page - 1) * 16
     query = {"title": {"$regex": q, "$options": "i"}} if q else {}
     latest = await videos_col.find(query).sort("created_at", -1).skip(skip).limit(16).to_list(16)
 
-    # 24-Hour Auto Trending Aggregation
     trending = []
     if page == 1 and not q:
         pipeline = [
@@ -451,7 +511,11 @@ async def api_videos(q: str = "", page: int = 1):
             "created_at": v["created_at"].strftime("%d %b %Y")
         }
 
-    return {"trending": [serialize(v) for v in trending], "latest": [serialize(v) for v in latest]}
+    result = {"trending": [serialize(v) for v in trending], "latest": [serialize(v) for v in latest]}
+    if page == 1 and not q:
+        FEED_CACHE["data"] = result
+        FEED_CACHE["expires"] = time.time() + 30
+    return result
 
 @app.get("/api/video/{vid_id}")
 async def api_video_detail(vid_id: str, x_init_data: str = Header("")):
@@ -484,11 +548,12 @@ async def api_check_join(request: Request):
 @app.post("/api/unlock/direct-link")
 async def api_get_direct_link(request: Request):
     body = await request.json()
-    verify_telegram_init_data(body.get("initData", ""))
+    tg_user = verify_telegram_init_data(body.get("initData", ""))
     cfg = await get_settings()
     links = cfg.get("direct_links", [])
     if not links:
         raise HTTPException(400, "No direct links configured")
+    AD_SESSIONS[tg_user["id"]] = time.time()
     return {"url": random.choice(links), "timer": cfg.get("ad_timer", 15)}
 
 @app.post("/api/unlock/complete")
@@ -514,7 +579,13 @@ async def api_unlock_complete(request: Request):
 
     already = await unlocks_col.find_one({"user_id": uid, "video_id": vid_id, "part_num": part_num})
     if not already and not is_vip:
-        if method == "coin":
+        if method == "direct":
+            req_sec = cfg.get("ad_timer", 15)
+            started = AD_SESSIONS.get(uid, 0)
+            if (time.time() - started) < max(1, req_sec - 1):
+                raise HTTPException(400, f"⚠️ আপনি বিজ্ঞাপনটি {req_sec} সেকেন্ড দেখেননি! পুনরায় চেষ্টা করুন।")
+            AD_SESSIONS.pop(uid, None)
+        elif method == "coin":
             if user.get("coins", 0) < 10:
                 raise HTTPException(400, "পর্যাপ্ত কয়েন নেই (১০ কয়েন প্রয়োজন)")
             await users_col.update_one({"user_id": uid}, {"$inc": {"coins": -10}})
@@ -524,19 +595,26 @@ async def api_unlock_complete(request: Request):
             "expires_at": now + timedelta(hours=exp_hours)
         })
 
-    # Update Views & 24h Trending Log
     await videos_col.update_one({"_id": ObjectId(vid_id)}, {"$inc": {"views": 1}})
     await trending_col.insert_one({"video_id": vid_id, "created_at": now})
 
-    # Deliver Video directly to Bot DM
+    # Auto-delete warning + Action buttons in Bot DM
+    del_hours = cfg.get("auto_delete_hours", 6)
+    warn_txt = f"\n\n⚠️ <i>সতর্কতা: এই ভিডিওটি আগামী {del_hours} ঘণ্টা পর অটোমেটিক ডিলিট হয়ে যাবে। তার আগেই দেখে নিন!</i>" if del_hours > 0 else ""
+    total_parts = len(vid.get("parts", []))
+    dm_btns = [[InlineKeyboardButton(text="🟢 আরও ভিডিও দেখুন", web_app=WebAppInfo(url=MINI_APP_URL))]]
+    if part_num < total_parts:
+        dm_btns.append([InlineKeyboardButton(text=f"🟡 পরের পার্ট (Part {part_num + 1:02d})", web_app=WebAppInfo(url=f"{MINI_APP_URL}?vid={vid_id}"))])
+
     try:
         sent = await bot.copy_message(
             chat_id=uid,
             from_chat_id=STORAGE_CHANNEL_ID,
             message_id=part["message_id"],
-            caption=f"🎬 <b>{vid['title']}</b>\n🎞️ <b>{part['title']}</b>",
+            caption=f"🎬 <b>{vid['title']}</b>\n🎞️ <b>{part['title']}</b>{warn_txt}",
             parse_mode="HTML",
-            protect_content=vid.get("protect_content", True)
+            protect_content=vid.get("protect_content", True),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=dm_btns)
         )
         await log_bot_msg(uid, sent.message_id)
     except Exception:
@@ -595,6 +673,7 @@ async def admin_save_settings(request: Request, x_admin_pass: str = Header(None)
     data = await request.json()
     data.pop("_id", None)
     await settings_col.update_one({"_id": "global"}, {"$set": data})
+    clear_feed_cache()
     return {"ok": True}
 
 @app.get("/api/admin/videos")
@@ -607,6 +686,7 @@ async def admin_list_videos(x_admin_pass: str = Header(None)):
 async def admin_delete_video(vid_id: str, x_admin_pass: str = Header(None)):
     verify_admin(x_admin_pass)
     await videos_col.delete_one({"_id": ObjectId(vid_id)})
+    clear_feed_cache()
     return {"ok": True}
 
 @app.patch("/api/admin/video/{vid_id}/protect")
@@ -622,9 +702,10 @@ async def do_broadcast(text: str, photo_url: str):
     async for u in cursor:
         try:
             if photo_url:
-                await bot.send_photo(u["user_id"], photo=photo_url, caption=text, parse_mode="HTML")
+                sent = await bot.send_photo(u["user_id"], photo=photo_url, caption=text, parse_mode="HTML")
             else:
-                await bot.send_message(u["user_id"], text=text, parse_mode="HTML")
+                sent = await bot.send_message(u["user_id"], text=text, parse_mode="HTML")
+            await log_bot_msg(u["user_id"], sent.message_id)
             await asyncio.sleep(0.05)
         except:
             pass
