@@ -6,7 +6,7 @@ import httpx
 from PIL import Image, ImageFilter
 from bson import ObjectId
 from fastapi import FastAPI, Request, HTTPException, Header, BackgroundTasks
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from aiogram import Bot, Dispatcher, F, types
@@ -219,13 +219,13 @@ async def handle_admin_video(message: types.Message, state: FSMContext):
 async def cb_up_new(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(UploadState.waiting_thumb)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🟡 Skip Thumbnail", callback_data="skip_thumb")]])
-    await call.message.edit_text("🖼️ এখন ভিডিওটির **Thumbnail ছবি** পাঠান (যে কোনো সাইজের ছবি অটোমেটিক 16:9 Blur হয়ে যাবে):", parse_mode="HTML", reply_markup=kb)
+    await call.message.edit_text("🖼️ এখন ভিডিওটির <b>Thumbnail ছবি</b> পাঠান (যে কোনো সাইজের ছবি অটোমেটিক 16:9 Blur হয়ে যাবে):", parse_mode="HTML", reply_markup=kb)
 
 @dp.callback_query(F.data == "skip_thumb")
 async def cb_skip_thumb(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(thumbnail="")
     await state.set_state(UploadState.waiting_title)
-    await call.message.edit_text("✍️ এখন ভিডিওটির **Title** লিখুন:")
+    await call.message.edit_text("✍️ এখন ভিডিওটির <b>Title</b> লিখুন:", parse_mode="HTML")
 
 @dp.message(UploadState.waiting_thumb, F.photo)
 async def handle_thumb(message: types.Message, state: FSMContext):
@@ -233,7 +233,7 @@ async def handle_thumb(message: types.Message, state: FSMContext):
     thumb_url = await process_and_upload_thumb(message.photo[-1].file_id)
     await state.update_data(thumbnail=thumb_url)
     await state.set_state(UploadState.waiting_title)
-    await wait_msg.edit_text("✅ Thumbnail সেভ হয়েছে!\n\n✍️ এখন ভিডিওটির **Title** লিখুন:")
+    await wait_msg.edit_text("✅ Thumbnail সেভ হয়েছে!\n\n✍️ এখন ভিডিওটির <b>Title</b> লিখুন:", parse_mode="HTML")
 
 @dp.message(UploadState.waiting_title, F.text)
 async def handle_title(message: types.Message, state: FSMContext):
@@ -330,15 +330,29 @@ async def auto_delete_worker():
             print("AutoDelete Error:", e)
         await asyncio.sleep(60)
 
+# ---------------- KEEP-ALIVE SELF PING (প্রতি ৪ মিনিট পরপর) ----------------
+async def keep_alive_worker():
+    await asyncio.sleep(30)
+    while True:
+        if MINI_APP_URL:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.get(f"{MINI_APP_URL}/health")
+            except Exception:
+                pass
+        await asyncio.sleep(240)
+
 # ---------------- FASTAPI APP & LIFESPAN ----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     poll_task = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
     clean_task = asyncio.create_task(auto_delete_worker())
+    ping_task = asyncio.create_task(keep_alive_worker())
     yield
     poll_task.cancel()
     clean_task.cancel()
+    ping_task.cancel()
     await bot.session.close()
 
 app = FastAPI(lifespan=lifespan)
@@ -484,7 +498,7 @@ async def api_unlock_complete(request: Request):
     uid = tg_user["id"]
     vid_id = body.get("video_id")
     part_num = int(body.get("part_num"))
-    method = body.get("method", "ad") # ad | coin | vip
+    method = body.get("method", "ad")
 
     vid = await videos_col.find_one({"_id": ObjectId(vid_id)})
     if not vid:
@@ -525,7 +539,7 @@ async def api_unlock_complete(request: Request):
             protect_content=vid.get("protect_content", True)
         )
         await log_bot_msg(uid, sent.message_id)
-    except Exception as e:
+    except Exception:
         raise HTTPException(400, "প্রথমে বটে /start দিন যাতে বট আপনাকে মেসেজ পাঠাতে পারে!")
 
     return {"ok": True, "bot_url": f"https://t.me/{BOT_USERNAME}"}
