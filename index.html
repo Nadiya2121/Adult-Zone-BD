@@ -38,7 +38,7 @@
     <button onclick="document.getElementById('noticeBanner').classList.add('hidden')" class="text-gray-400 text-lg leading-none px-1">&times;</button>
   </div>
 
-  <!-- Search Bar (Hidden unless Home or Search Tab) -->
+  <!-- Search Bar -->
   <div id="searchWrap" class="px-4 mt-3">
     <input id="searchInput" oninput="debounceSearch()" type="text" placeholder="🔍 আপনার পছন্দের ভিডিও খুঁজুন..."
       class="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-cyan-400 transition" />
@@ -46,7 +46,6 @@
 
   <!-- HOME VIEW -->
   <main id="homeView" class="px-4 mt-4 space-y-6">
-    <!-- Auto-Scrolling Top Trending -->
     <section id="trendingSection" class="hidden">
       <div class="flex items-center justify-between mb-2.5">
         <h2 class="text-sm font-extrabold text-amber-400 flex items-center gap-1.5">🔥 ২৪ ঘণ্টার টপ ট্রেন্ডিং</h2>
@@ -55,11 +54,9 @@
       <div id="trendingList" class="flex gap-3 overflow-x-auto no-scrollbar scroll-smooth snap-x pb-1"></div>
     </section>
 
-    <!-- 1-Column Cinematic Latest Feed -->
     <section>
       <h2 id="feedHeading" class="text-sm font-extrabold text-cyan-400 mb-3">🎬 সর্বশেষ প্রিমিয়াম ভিডিও</h2>
       <div id="latestGrid" class="grid grid-cols-1 gap-4">
-        <!-- Skeleton Loader -->
         <div class="h-56 rounded-2xl shimmer"></div>
         <div class="h-56 rounded-2xl shimmer"></div>
       </div>
@@ -113,7 +110,7 @@
 
   <!-- VIDEO DETAIL & PARTS VIEW -->
   <main id="detailView" class="hidden px-4 mt-4 space-y-4">
-    <button onclick="showHome()" class="px-3 py-1.5 rounded-xl bg-white/10 text-xs text-cyan-400 font-bold">← ফিরে যান</button>
+    <button onclick="goBackOneStep()" class="px-3 py-1.5 rounded-xl bg-white/10 text-xs text-cyan-400 font-bold">← ফিরে যান</button>
     <div class="cine-card">
       <div class="relative">
         <img id="detThumb" class="w-full aspect-video object-cover" />
@@ -136,12 +133,6 @@
       <p id="unlockPartName" class="text-xs text-cyan-400 font-semibold"></p>
       <p id="antiCheatMsg" class="hidden p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs text-rose-300 font-semibold"></p>
 
-      <div id="forceJoinBox" class="hidden space-y-2 text-left">
-        <p class="text-xs text-rose-400 font-semibold">ভিডিও দেখতে নিচের চ্যানেলগুলোতে জয়েন করুন:</p>
-        <div id="forceChannelBtns" class="space-y-1.5"></div>
-        <button onclick="verifyJoin()" class="w-full py-2.5 rounded-xl bg-emerald-400 text-black font-bold text-xs mt-2">✅ জয়েন করেছি (Verify)</button>
-      </div>
-
       <div id="adOptionsBox" class="space-y-2.5">
         <button id="btnMonetag" onclick="startMonetagAd()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg">📺 বিজ্ঞাপন দেখে আনলক (Monetag)</button>
         <button id="btnDirect" onclick="startDirectAd()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg">🔗 ডাইরেক্ট লিংক বিজ্ঞাপন</button>
@@ -153,7 +144,7 @@
         <p class="text-xs text-gray-300 leading-relaxed">বিজ্ঞাপনের পেজে নির্ধারিত সময় অপেক্ষা করে তারপর এখানে ফিরে আসুন। আগে ফিরে আসলে আনলক হবে না!</p>
       </div>
 
-      <button onclick="closeUnlock()" class="text-xs text-gray-400 pt-1">বাতিল করুন</button>
+      <button onclick="goBackOneStep()" class="text-xs text-gray-400 pt-1">বাতিল করুন</button>
     </div>
   </div>
 
@@ -183,6 +174,39 @@ const initData = tg.initData;
 let USER = {}, CONFIG = {}, CUR_VID = null, CUR_PART = null, page = 1, searchTimer = null;
 let ALL_TRENDING = [], ALL_VIDEOS_MAP = {};
 let adStartTime = 0, adRequiredSec = 15, adActive = false, adTimerInterval = null, trendScrollInt = null;
+let lastTab = "home";
+
+// 1-Step Mobile & Telegram Back Button Navigation
+history.replaceState({ view: "home" }, "");
+tg.BackButton.onClick(() => goBackOneStep());
+
+function goBackOneStep() {
+  if (!document.getElementById("unlockModal").classList.contains("hidden") ||
+      !document.getElementById("detailView").classList.contains("hidden") ||
+      !document.getElementById("topView").classList.contains("hidden") ||
+      !document.getElementById("savedView").classList.contains("hidden") ||
+      !document.getElementById("profileView").classList.contains("hidden")) {
+    if (history.state && history.state.view !== "home") {
+      history.back();
+    } else {
+      _renderTabUI("home");
+    }
+  }
+}
+
+window.addEventListener("popstate", (e) => {
+  const modal = document.getElementById("unlockModal");
+  if (!modal.classList.contains("hidden")) {
+    _closeUnlockUI();
+    return;
+  }
+  const view = e.state?.view || "home";
+  if (view === "detail" && CUR_VID) {
+    _renderDetailUI();
+  } else {
+    _renderTabUI(view === "detail" ? "home" : view, false);
+  }
+});
 
 function getSaved() { try { return JSON.parse(localStorage.getItem("vv_saved") || "[]"); } catch { return []; } }
 function setSaved(arr) { localStorage.setItem("vv_saved", JSON.stringify(arr)); }
@@ -345,14 +369,22 @@ function loadMore() { page++; loadVideos(false); }
 function debounceSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    switchTab("home", false);
+    _renderTabUI("home", false);
     loadVideos(true);
   }, 400);
 }
 
 function switchTab(tab, focusSearch=true) {
+  if (lastTab !== tab || !document.getElementById("detailView").classList.contains("hidden")) {
+    if (tab !== "home") history.pushState({ view: tab }, "");
+  }
+  _renderTabUI(tab, focusSearch);
+}
+
+function _renderTabUI(tab, focusSearch=true) {
+  lastTab = tab;
   tg.HapticFeedback.selectionChanged();
-  tg.BackButton.hide();
+  _closeUnlockUI();
   ["homeView", "topView", "savedView", "profileView", "detailView"].forEach(id => document.getElementById(id).classList.add("hidden"));
   ["home", "top", "search", "saved", "profile"].forEach(n => {
     const el = document.getElementById("nav-" + n);
@@ -365,20 +397,24 @@ function switchTab(tab, focusSearch=true) {
   document.getElementById("searchWrap").classList.toggle("hidden", tab === "profile" || tab === "saved");
 
   if (tab === "home") {
+    tg.BackButton.hide();
     document.getElementById("homeView").classList.remove("hidden");
-  } else if (tab === "search") {
-    document.getElementById("homeView").classList.remove("hidden");
-    if (focusSearch) document.getElementById("searchInput").focus();
-  } else if (tab === "top") {
-    document.getElementById("topView").classList.remove("hidden");
-    document.getElementById("topFullGrid").innerHTML = ALL_TRENDING.length
-      ? ALL_TRENDING.map(v => buildCineCard(v, "🔥 TRENDING")).join("")
-      : `<p class="text-xs text-gray-400 text-center py-10">গত ২৪ ঘণ্টায় কোনো ট্রেন্ডিং ভিডিও নেই।</p>`;
-  } else if (tab === "saved") {
-    document.getElementById("savedView").classList.remove("hidden");
-    renderSaved();
-  } else if (tab === "profile") {
-    document.getElementById("profileView").classList.remove("hidden");
+  } else {
+    tg.BackButton.show();
+    if (tab === "search") {
+      document.getElementById("homeView").classList.remove("hidden");
+      if (focusSearch) document.getElementById("searchInput").focus();
+    } else if (tab === "top") {
+      document.getElementById("topView").classList.remove("hidden");
+      document.getElementById("topFullGrid").innerHTML = ALL_TRENDING.length
+        ? ALL_TRENDING.map(v => buildCineCard(v, "🔥 TRENDING")).join("")
+        : `<p class="text-xs text-gray-400 text-center py-10">গত ২৪ ঘণ্টায় কোনো ট্রেন্ডিং ভিডিও নেই।</p>`;
+    } else if (tab === "saved") {
+      document.getElementById("savedView").classList.remove("hidden");
+      renderSaved();
+    } else if (tab === "profile") {
+      document.getElementById("profileView").classList.remove("hidden");
+    }
   }
 }
 
@@ -393,24 +429,28 @@ async function openVideo(id) {
   tg.HapticFeedback.impactOccurred("light");
   const vid = await api(`/api/video/${id}`);
   CUR_VID = vid;
+  history.pushState({ view: "detail" }, "");
+  _renderDetailUI();
+}
+
+function _renderDetailUI() {
   ["homeView", "topView", "savedView", "profileView", "searchWrap"].forEach(x => document.getElementById(x).classList.add("hidden"));
   document.getElementById("detailView").classList.remove("hidden");
   tg.BackButton.show();
-  tg.BackButton.onClick(showHome);
 
-  document.getElementById("detThumb").src = vid.thumbnail || "https://via.placeholder.com/640x360";
-  document.getElementById("detTitle").innerText = vid.title;
-  document.getElementById("detMeta").innerText = `👁 ${vid.views} Views • 🎞️ ${vid.parts.length} Parts`;
+  document.getElementById("detThumb").src = CUR_VID.thumbnail || "https://via.placeholder.com/640x360";
+  document.getElementById("detTitle").innerText = CUR_VID.title;
+  document.getElementById("detMeta").innerText = `👁 ${CUR_VID.views} Views • 🎞️ ${CUR_VID.parts.length} Parts`;
   renderCurrentSaveStates();
 
   const tabs = document.getElementById("partTabs");
   tabs.innerHTML = "";
   const chunkSize = 20;
-  for (let i = 0; i < vid.parts.length; i += chunkSize) {
-    const start = i + 1, end = Math.min(i + chunkSize, vid.parts.length);
+  for (let i = 0; i < CUR_VID.parts.length; i += chunkSize) {
+    const start = i + 1, end = Math.min(i + chunkSize, CUR_VID.parts.length);
     tabs.innerHTML += `<button onclick="renderParts(${i}, ${end})" class="px-3.5 py-1.5 rounded-xl bg-white/10 text-xs font-bold whitespace-nowrap">Parts ${start}-${end}</button>`;
   }
-  renderParts(0, Math.min(chunkSize, vid.parts.length));
+  renderParts(0, Math.min(chunkSize, CUR_VID.parts.length));
 }
 
 function renderParts(start, end) {
@@ -428,33 +468,18 @@ function renderParts(start, end) {
     </div>`).join("");
 }
 
-function showHome() { switchTab("home"); }
-
-async function clickUnlock(partNum, title) {
+function clickUnlock(partNum, title) {
   CUR_PART = partNum;
+  history.pushState({ view: "modal" }, "");
   document.getElementById("unlockPartName").innerText = `${CUR_VID.title} - ${title}`;
   document.getElementById("antiCheatMsg").classList.add("hidden");
-  document.getElementById("unlockModal").classList.remove("hidden");
+  document.getElementById("adOptionsBox").classList.remove("hidden");
   document.getElementById("timerBox").classList.add("hidden");
-  await verifyJoin();
-}
-
-async function verifyJoin() {
-  const res = await api("/api/check-join", "POST", { initData });
-  if (!res.joined) {
-    document.getElementById("forceJoinBox").classList.remove("hidden");
-    document.getElementById("adOptionsBox").classList.add("hidden");
-    document.getElementById("forceChannelBtns").innerHTML = res.missing.map(c =>
-      `<a href="${c.url}" target="_blank" class="block w-full py-2.5 px-3 rounded-xl bg-white/10 text-xs font-bold text-cyan-300">📢 ${c.name} (Join)</a>`
-    ).join("");
-  } else {
-    document.getElementById("forceJoinBox").classList.add("hidden");
-    document.getElementById("adOptionsBox").classList.remove("hidden");
-    document.getElementById("btnMonetag").classList.toggle("hidden", !CONFIG.monetag_zone_id);
-    const dirBtn = document.getElementById("btnDirect");
-    dirBtn.classList.toggle("hidden", !CONFIG.has_direct_links);
-    dirBtn.innerText = `🔗 বিজ্ঞাপন দেখে আনলক (${CONFIG.ad_timer} সেকেন্ড)`;
-  }
+  document.getElementById("btnMonetag").classList.toggle("hidden", !CONFIG.monetag_zone_id);
+  const dirBtn = document.getElementById("btnDirect");
+  dirBtn.classList.toggle("hidden", !CONFIG.has_direct_links);
+  dirBtn.innerText = `🔗 বিজ্ঞাপন দেখে আনলক (${CONFIG.ad_timer} সেকেন্ড)`;
+  document.getElementById("unlockModal").classList.remove("hidden");
 }
 
 function startMonetagAd() {
@@ -466,7 +491,6 @@ function startMonetagAd() {
   }
 }
 
-// Direct Link Ad with Strict Anti-Cheat Visibility Check
 async function startDirectAd() {
   const res = await api("/api/unlock/direct-link", "POST", { initData });
   adRequiredSec = res.timer;
@@ -522,7 +546,7 @@ async function deliverVideo(partNum, method) {
       initData, video_id: CUR_VID.id, part_num: partNum, method
     });
     tg.HapticFeedback.notificationOccurred("success");
-    closeUnlock();
+    _closeUnlockUI();
     tg.openTelegramLink(res.bot_url);
     tg.close();
   } catch (e) {
@@ -530,7 +554,11 @@ async function deliverVideo(partNum, method) {
   }
 }
 
-function closeUnlock() { adActive = false; clearInterval(adTimerInterval); document.getElementById("unlockModal").classList.add("hidden"); }
+function _closeUnlockUI() {
+  adActive = false;
+  clearInterval(adTimerInterval);
+  document.getElementById("unlockModal").classList.add("hidden");
+}
 
 async function doCheckin() {
   try {
