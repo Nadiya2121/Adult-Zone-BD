@@ -7,131 +7,214 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { background: #090b10; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
-    .glass { background: rgba(20, 24, 36, 0.78); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.08); }
-    .rgb-card { position: relative; border-radius: 14px; overflow: hidden; background: #121622; }
-    .rgb-card::before {
-      content: ""; position: absolute; inset: -1.5px; z-index: -1; border-radius: 15px;
-      background: linear-gradient(45deg, #ff007f, #7928ca, #00d4ff, #00ff88);
-    }
+    body { background: #07090f; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(18, 22, 34, 0.82); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
+    .cine-card { position: relative; border-radius: 18px; overflow: hidden; background: #101420; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8); }
+    .shimmer { background: linear-gradient(90deg, #121624 25%, #1d2438 50%, #121624 75%); background-size: 200% 100%; animation: shim 1.4s infinite; }
+    @keyframes shim { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .no-scrollbar::-webkit-scrollbar { display: none; }
+    .nav-active { color: #22d3ee; background: rgba(34, 211, 238, 0.12); border-radius: 14px; }
   </style>
 </head>
-<body class="pb-20 select-none">
+<body class="pb-24 select-none">
 
-  <!-- Top Navbar -->
+  <!-- Top Header -->
   <header class="sticky top-0 z-40 glass px-4 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      <span class="w-8 h-8 rounded-lg bg-gradient-to-tr from-pink-500 to-cyan-400 flex items-center justify-center font-bold text-black">V</span>
-      <h1 id="appTitle" class="font-bold text-lg tracking-wide bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">VideoVault</h1>
+    <div class="flex items-center gap-2.5">
+      <span class="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 via-purple-500 to-cyan-400 flex items-center justify-center font-extrabold text-white shadow-lg shadow-cyan-500/20">▶</span>
+      <h1 id="appTitle" class="font-extrabold text-lg tracking-wide bg-gradient-to-r from-white via-cyan-100 to-cyan-400 bg-clip-text text-transparent">VideoVault</h1>
     </div>
     <div class="flex items-center gap-2">
-      <span id="vipBadge" class="hidden px-2.5 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-black">👑 VIP</span>
-      <button onclick="openProfile()" class="px-3 py-1 rounded-full bg-white/10 text-xs font-semibold flex items-center gap-1">
+      <span id="vipBadge" class="hidden px-2.5 py-1 rounded-full text-[11px] font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow">👑 VIP</span>
+      <button onclick="switchTab('profile')" class="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-bold flex items-center gap-1">
         🪙 <span id="coinCount">0</span>
       </button>
     </div>
   </header>
 
-  <!-- Search Bar -->
-  <div class="px-4 mt-3">
-    <input id="searchInput" oninput="debounceSearch()" type="text" placeholder="🔍 ভিডিওর নাম লিখে খুঁজুন..."
-      class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-cyan-400" />
+  <!-- Premium Welcome Notice -->
+  <div id="noticeBanner" class="hidden mx-4 mt-3 p-3 rounded-2xl bg-gradient-to-r from-cyan-500/15 via-purple-500/15 to-pink-500/15 border border-cyan-400/20 flex items-center justify-between gap-2">
+    <p id="noticeText" class="text-xs text-cyan-100 font-medium leading-relaxed"></p>
+    <button onclick="document.getElementById('noticeBanner').classList.add('hidden')" class="text-gray-400 text-lg leading-none px-1">&times;</button>
   </div>
 
-  <!-- Home View -->
+  <!-- Search Bar (Hidden unless Home or Search Tab) -->
+  <div id="searchWrap" class="px-4 mt-3">
+    <input id="searchInput" oninput="debounceSearch()" type="text" placeholder="🔍 আপনার পছন্দের ভিডিও খুঁজুন..."
+      class="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-cyan-400 transition" />
+  </div>
+
+  <!-- HOME VIEW -->
   <main id="homeView" class="px-4 mt-4 space-y-6">
+    <!-- Auto-Scrolling Top Trending -->
     <section id="trendingSection" class="hidden">
-      <h2 class="text-sm font-bold text-amber-400 mb-2.5 flex items-center gap-1.5">🔥 ২৪ ঘণ্টার টপ ভিডিও (Trending)</h2>
-      <div id="trendingList" class="flex gap-3 overflow-x-auto no-scrollbar pb-1"></div>
+      <div class="flex items-center justify-between mb-2.5">
+        <h2 class="text-sm font-extrabold text-amber-400 flex items-center gap-1.5">🔥 ২৪ ঘণ্টার টপ ট্রেন্ডিং</h2>
+        <span class="text-[10px] text-gray-400">Auto-Scrolling</span>
+      </div>
+      <div id="trendingList" class="flex gap-3 overflow-x-auto no-scrollbar scroll-smooth snap-x pb-1"></div>
     </section>
 
+    <!-- 1-Column Cinematic Latest Feed -->
     <section>
-      <h2 class="text-sm font-bold text-cyan-400 mb-2.5">🎬 সর্বশেষ ভিডিও</h2>
-      <div id="latestGrid" class="grid grid-cols-2 gap-3"></div>
-      <button id="loadMoreBtn" onclick="loadMore()" class="hidden w-full mt-4 py-2.5 rounded-xl bg-white/10 text-xs font-semibold">আরও দেখুন</button>
+      <h2 id="feedHeading" class="text-sm font-extrabold text-cyan-400 mb-3">🎬 সর্বশেষ প্রিমিয়াম ভিডিও</h2>
+      <div id="latestGrid" class="grid grid-cols-1 gap-4">
+        <!-- Skeleton Loader -->
+        <div class="h-56 rounded-2xl shimmer"></div>
+        <div class="h-56 rounded-2xl shimmer"></div>
+      </div>
+      <button id="loadMoreBtn" onclick="loadMore()" class="hidden w-full mt-4 py-3 rounded-2xl bg-white/10 border border-white/10 text-xs font-bold">আরও ভিডিও লোড করুন ↓</button>
     </section>
   </main>
 
-  <!-- Video Detail & Parts View -->
+  <!-- TOP TRENDING FULL TAB -->
+  <main id="topView" class="hidden px-4 mt-4 space-y-4">
+    <h2 class="text-base font-extrabold text-amber-400">🔥 ২৪ ঘণ্টার সেরা ভিডিওসমূহ</h2>
+    <div id="topFullGrid" class="grid grid-cols-1 gap-4"></div>
+  </main>
+
+  <!-- SAVED / BOOKMARKS TAB -->
+  <main id="savedView" class="hidden px-4 mt-4 space-y-4">
+    <h2 class="text-base font-extrabold text-pink-400">❤️ আপনার সেভ করা ভিডিও</h2>
+    <div id="savedGrid" class="grid grid-cols-1 gap-4"></div>
+  </main>
+
+  <!-- PROFILE & VIP TAB -->
+  <main id="profileView" class="hidden px-4 mt-4 space-y-4">
+    <div class="glass rounded-3xl p-5 space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-400 to-purple-500 flex items-center justify-center text-xl font-bold text-black">👤</div>
+        <div>
+          <h3 id="profName" class="font-bold text-base">User</h3>
+          <span id="profVip" class="text-xs font-semibold text-emerald-400">Free Member</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+          <div class="text-xs text-gray-400">মোট কয়েন</div>
+          <div id="profCoins" class="text-2xl font-extrabold text-amber-400 mt-1">0</div>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+          <div class="text-xs text-gray-400">সেভ করা ভিডিও</div>
+          <div id="profSavedCount" class="text-2xl font-extrabold text-pink-400 mt-1">0</div>
+        </div>
+      </div>
+      <button onclick="doCheckin()" class="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-400 to-teal-500 text-black shadow-lg">🎁 ডেইলি চেক-ইন (+কয়েন)</button>
+      <button onclick="buyVip()" id="buyVipBtn" class="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow-lg">👑 ১ দিনের VIP কিনুন (50 কয়েন)</button>
+      <div class="p-3.5 rounded-2xl bg-white/5 space-y-2">
+        <div class="text-xs text-gray-300 font-semibold">🔗 বন্ধুদের ইনভাইট করে কয়েন আয় করুন:</div>
+        <div class="flex gap-2">
+          <input id="refLinkInput" readonly class="flex-1 bg-black/50 px-3 py-2 rounded-xl text-xs text-gray-300 border border-white/10" />
+          <button onclick="copyRef()" class="px-4 py-2 rounded-xl bg-cyan-400 text-black text-xs font-bold">Copy</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- VIDEO DETAIL & PARTS VIEW -->
   <main id="detailView" class="hidden px-4 mt-4 space-y-4">
-    <button onclick="showHome()" class="text-xs text-cyan-400 font-semibold">← হোমে ফিরে যান</button>
-    <div class="rounded-2xl overflow-hidden border border-white/10 bg-[#121622]">
-      <img id="detThumb" class="w-full aspect-video object-cover" />
-      <div class="p-3.5">
-        <h2 id="detTitle" class="font-bold text-base"></h2>
-        <p id="detMeta" class="text-xs text-gray-400 mt-1"></p>
+    <button onclick="showHome()" class="px-3 py-1.5 rounded-xl bg-white/10 text-xs text-cyan-400 font-bold">← ফিরে যান</button>
+    <div class="cine-card">
+      <div class="relative">
+        <img id="detThumb" class="w-full aspect-video object-cover" />
+        <div class="absolute inset-0 bg-gradient-to-t from-[#101420] via-transparent to-transparent"></div>
+        <button id="detSaveBtn" onclick="toggleSaveCurrent()" class="absolute top-3 right-3 px-3 py-1.5 rounded-full glass text-xs font-bold">🤍 Save</button>
+      </div>
+      <div class="p-4">
+        <h2 id="detTitle" class="font-extrabold text-base leading-snug"></h2>
+        <p id="detMeta" class="text-xs text-gray-400 mt-1.5"></p>
       </div>
     </div>
     <div id="partTabs" class="flex gap-2 overflow-x-auto no-scrollbar"></div>
     <div id="partsList" class="space-y-2.5"></div>
   </main>
 
-  <!-- Profile & VIP Modal -->
-  <div id="profileModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-    <div class="glass w-full max-w-md rounded-2xl p-5 space-y-4">
-      <div class="flex justify-between items-center">
-        <h3 class="font-bold text-lg">👤 প্রোফাইল ও কয়েন</h3>
-        <button onclick="closeProfile()" class="text-gray-400 text-xl">&times;</button>
-      </div>
-      <div class="grid grid-cols-2 gap-3 text-center">
-        <div class="p-3 rounded-xl bg-white/5">
-          <div class="text-xs text-gray-400">আপনার কয়েন</div>
-          <div id="profCoins" class="text-xl font-bold text-amber-400 mt-1">0</div>
-        </div>
-        <div class="p-3 rounded-xl bg-white/5">
-          <div class="text-xs text-gray-400">VIP স্ট্যাটাস</div>
-          <div id="profVip" class="text-sm font-bold text-emerald-400 mt-1.5">Free User</div>
-        </div>
-      </div>
-      <button onclick="doCheckin()" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-black">🎁 ডেইলি চেক-ইন (+কয়েন)</button>
-      <button onclick="buyVip()" id="buyVipBtn" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black">👑 ১ দিনের VIP কিনুন (50 কয়েন)</button>
-      <div class="p-3 rounded-xl bg-white/5 space-y-2">
-        <div class="text-xs text-gray-300 font-semibold">🔗 বন্ধুদের ইনভাইট করে কয়েন আয় করুন:</div>
-        <div class="flex gap-2">
-          <input id="refLinkInput" readonly class="flex-1 bg-black/40 px-2.5 py-1.5 rounded-lg text-xs text-gray-300" />
-          <button onclick="copyRef()" class="px-3 py-1.5 rounded-lg bg-cyan-500 text-black text-xs font-bold">Copy</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Unlock Options / Ad Timer Modal -->
+  <!-- UNLOCK MODAL (With Anti-Cheat) -->
   <div id="unlockModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-    <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-3.5 text-center">
-      <h3 class="font-bold text-base">🔓 ভিডিও আনলক করুন</h3>
+    <div class="glass w-full max-w-sm rounded-3xl p-5 space-y-3.5 text-center">
+      <h3 class="font-extrabold text-base">🔓 ভিডিও আনলক করুন</h3>
       <p id="unlockPartName" class="text-xs text-cyan-400 font-semibold"></p>
+      <p id="antiCheatMsg" class="hidden p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs text-rose-300 font-semibold"></p>
 
-      <!-- Force Join Box -->
       <div id="forceJoinBox" class="hidden space-y-2 text-left">
         <p class="text-xs text-rose-400 font-semibold">ভিডিও দেখতে নিচের চ্যানেলগুলোতে জয়েন করুন:</p>
         <div id="forceChannelBtns" class="space-y-1.5"></div>
-        <button onclick="verifyJoin()" class="w-full py-2.5 rounded-xl bg-emerald-500 text-black font-bold text-xs mt-2">✅ জয়েন করেছি (Verify)</button>
+        <button onclick="verifyJoin()" class="w-full py-2.5 rounded-xl bg-emerald-400 text-black font-bold text-xs mt-2">✅ জয়েন করেছি (Verify)</button>
       </div>
 
-      <!-- Ad Options Box -->
       <div id="adOptionsBox" class="space-y-2.5">
-        <button id="btnMonetag" onclick="startMonetagAd()" class="hidden w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white">📺 বিজ্ঞাপন দেখে আনলক (Monetag)</button>
-        <button id="btnDirect" onclick="startDirectAd()" class="hidden w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white">🔗 ডাইরেক্ট লিংক বিজ্ঞাপন দেখে আনলক</button>
-        <button onclick="unlockWithCoin()" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black">🪙 ১০ কয়েন দিয়ে আনলক</button>
+        <button id="btnMonetag" onclick="startMonetagAd()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg">📺 বিজ্ঞাপন দেখে আনলক (Monetag)</button>
+        <button id="btnDirect" onclick="startDirectAd()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg">🔗 ডাইরেক্ট লিংক বিজ্ঞাপন</button>
+        <button onclick="unlockWithCoin()" class="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow-lg">🪙 ১০ কয়েন দিয়ে আনলক</button>
       </div>
 
-      <!-- Countdown Box -->
-      <div id="timerBox" class="hidden py-4 space-y-3">
-        <div class="text-3xl font-extrabold text-amber-400" id="timerSec">15s</div>
-        <p class="text-xs text-gray-300">বিজ্ঞাপন ভেরিফাই হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...</p>
+      <div id="timerBox" class="hidden py-4 space-y-2">
+        <div class="text-3xl font-extrabold text-amber-400 animate-pulse" id="timerSec">15s</div>
+        <p class="text-xs text-gray-300 leading-relaxed">বিজ্ঞাপনের পেজে নির্ধারিত সময় অপেক্ষা করে তারপর এখানে ফিরে আসুন। আগে ফিরে আসলে আনলক হবে না!</p>
       </div>
 
-      <button onclick="closeUnlock()" class="text-xs text-gray-400 pt-2">বাতিল করুন</button>
+      <button onclick="closeUnlock()" class="text-xs text-gray-400 pt-1">বাতিল করুন</button>
     </div>
   </div>
+
+  <!-- 5-Button Glass Bottom Navigation Bar -->
+  <nav class="fixed bottom-0 inset-x-0 z-40 glass border-t border-white/10 px-2 py-2 flex justify-around items-center">
+    <button onclick="switchTab('home')" id="nav-home" class="nav-active flex flex-col items-center px-3 py-1.5 text-[11px] font-bold transition">
+      <span class="text-lg">🏠</span><span>হোম</span>
+    </button>
+    <button onclick="switchTab('top')" id="nav-top" class="text-gray-400 flex flex-col items-center px-3 py-1.5 text-[11px] font-bold transition">
+      <span class="text-lg">🔥</span><span>টপ</span>
+    </button>
+    <button onclick="switchTab('search')" id="nav-search" class="text-gray-400 flex flex-col items-center px-3 py-1.5 text-[11px] font-bold transition">
+      <span class="text-lg">🔍</span><span>সার্চ</span>
+    </button>
+    <button onclick="switchTab('saved')" id="nav-saved" class="text-gray-400 flex flex-col items-center px-3 py-1.5 text-[11px] font-bold transition">
+      <span class="text-lg">❤️</span><span>সেভড</span>
+    </button>
+    <button onclick="switchTab('profile')" id="nav-profile" class="text-gray-400 flex flex-col items-center px-3 py-1.5 text-[11px] font-bold transition">
+      <span class="text-lg">👤</span><span>প্রোফাইল</span>
+    </button>
+  </nav>
 
 <script>
 const tg = window.Telegram.WebApp;
 tg.expand();
 const initData = tg.initData;
 let USER = {}, CONFIG = {}, CUR_VID = null, CUR_PART = null, page = 1, searchTimer = null;
-let adStartTime = 0, adRequiredSec = 15, adTimerInterval = null;
+let ALL_TRENDING = [], ALL_VIDEOS_MAP = {};
+let adStartTime = 0, adRequiredSec = 15, adActive = false, adTimerInterval = null, trendScrollInt = null;
+
+function getSaved() { try { return JSON.parse(localStorage.getItem("vv_saved") || "[]"); } catch { return []; } }
+function setSaved(arr) { localStorage.setItem("vv_saved", JSON.stringify(arr)); }
+function isSaved(id) { return getSaved().some(x => x.id === id); }
+
+function toggleSave(id, e) {
+  if (e) e.stopPropagation();
+  tg.HapticFeedback.impactOccurred("medium");
+  let list = getSaved();
+  if (isSaved(id)) {
+    list = list.filter(x => x.id !== id);
+  } else {
+    const v = ALL_VIDEOS_MAP[id] || (CUR_VID && CUR_VID.id === id ? { id: CUR_VID.id, title: CUR_VID.title, thumbnail: CUR_VID.thumbnail, views: CUR_VID.views, parts_count: CUR_VID.parts.length, created_at: "Saved" } : null);
+    if (v) list.unshift(v);
+  }
+  setSaved(list);
+  renderCurrentSaveStates();
+  if (!document.getElementById("savedView").classList.contains("hidden")) renderSaved();
+}
+
+function toggleSaveCurrent() { if (CUR_VID) toggleSave(CUR_VID.id); }
+
+function renderCurrentSaveStates() {
+  document.querySelectorAll("[data-save-id]").forEach(btn => {
+    const id = btn.getAttribute("data-save-id");
+    btn.innerText = isSaved(id) ? "❤️" : "🤍";
+  });
+  if (CUR_VID) {
+    document.getElementById("detSaveBtn").innerText = isSaved(CUR_VID.id) ? "❤️ Saved" : "🤍 Save";
+  }
+  document.getElementById("profSavedCount").innerText = getSaved().length;
+}
 
 async function api(url, method="GET", body=null) {
   const opts = { method, headers: { "Content-Type": "application/json", "x-init-data": initData } };
@@ -147,6 +230,10 @@ async function init() {
     const res = await api("/api/auth", "POST", { initData });
     USER = res.user; CONFIG = res.config;
     document.getElementById("appTitle").innerText = CONFIG.app_name;
+    if (CONFIG.welcome_notice) {
+      document.getElementById("noticeText").innerText = CONFIG.welcome_notice;
+      document.getElementById("noticeBanner").classList.remove("hidden");
+    }
     updateUserUI();
 
     if (CONFIG.monetag_zone_id) {
@@ -158,20 +245,49 @@ async function init() {
     }
 
     await loadVideos(true);
+    const urlVid = new URLSearchParams(window.location.search).get("vid");
     const startParam = tg.initDataUnsafe?.start_param || "";
-    if (startParam.startsWith("vid_")) openVideo(startParam.replace("vid_", ""));
+    const targetVid = urlVid || (startParam.startsWith("vid_") ? startParam.replace("vid_", "") : "");
+    if (targetVid) openVideo(targetVid);
   } catch (e) { console.error(e); }
 }
 
 function updateUserUI() {
   document.getElementById("coinCount").innerText = USER.coins;
   document.getElementById("profCoins").innerText = USER.coins;
+  document.getElementById("profName").innerText = USER.name || "User";
+  document.getElementById("profSavedCount").innerText = getSaved().length;
   document.getElementById("refLinkInput").value = USER.ref_link || "";
   document.getElementById("buyVipBtn").innerText = `👑 ১ দিনের VIP কিনুন (${CONFIG.vip_coin_price} কয়েন)`;
   if (USER.is_vip) {
     document.getElementById("vipBadge").classList.remove("hidden");
-    document.getElementById("profVip").innerText = "👑 Active VIP";
+    document.getElementById("profVip").innerText = "👑 Active VIP Member";
   }
+}
+
+function buildCineCard(v, badgeText="✨ NEW") {
+  ALL_VIDEOS_MAP[v.id] = v;
+  const savedIcon = isSaved(v.id) ? "❤️" : "🤍";
+  return `
+    <div onclick="openVideo('${v.id}')" class="cine-card cursor-pointer transition active:scale-[0.98]">
+      <div class="relative">
+        <img loading="lazy" src="${v.thumbnail || 'https://via.placeholder.com/640x360'}" class="w-full aspect-video object-cover"/>
+        <div class="absolute inset-0 bg-gradient-to-t from-[#101420] via-black/20 to-transparent"></div>
+        <span class="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow">${badgeText}</span>
+        <button data-save-id="${v.id}" onclick="toggleSave('${v.id}', event)" class="absolute top-2.5 right-2.5 w-8 h-8 rounded-full glass flex items-center justify-center text-sm">${savedIcon}</button>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span class="w-11 h-11 rounded-full glass flex items-center justify-center text-white text-base shadow-lg border border-white/25">▶</span>
+        </div>
+        <span class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/75 border border-white/10 text-[11px] font-bold text-cyan-300">🎞️ ${v.parts_count} Parts</span>
+      </div>
+      <div class="p-3.5 pt-2">
+        <div class="text-sm font-extrabold line-clamp-2 leading-snug text-white">${v.title}</div>
+        <div class="flex items-center justify-between text-[11px] text-gray-400 mt-2">
+          <span>👁 ${v.views} Views • ${v.created_at}</span>
+          <span class="text-cyan-400 font-bold">Watch Now →</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 async function loadVideos(reset=false) {
@@ -180,56 +296,119 @@ async function loadVideos(reset=false) {
   const data = await api(`/api/videos?q=${encodeURIComponent(q)}&page=${page}`);
 
   if (page === 1 && data.trending.length > 0 && !q) {
+    ALL_TRENDING = data.trending;
     document.getElementById("trendingSection").classList.remove("hidden");
-    document.getElementById("trendingList").innerHTML = data.trending.map(v => `
-      <div onclick="openVideo('${v.id}')" class="min-w-[170px] rgb-card p-1 cursor-pointer">
-        <img src="${v.thumbnail || 'https://via.placeholder.com/320x180'}" class="w-full aspect-video object-cover rounded-lg"/>
-        <div class="p-2">
-          <div class="text-xs font-bold line-clamp-1">${v.title}</div>
-          <div class="text-[10px] text-amber-400 mt-0.5">🔥 ${v.views} Views • ${v.parts_count} Parts</div>
+    document.getElementById("trendingList").innerHTML = data.trending.map(v => {
+      ALL_VIDEOS_MAP[v.id] = v;
+      return `
+      <div onclick="openVideo('${v.id}')" class="min-w-[240px] snap-start cine-card cursor-pointer">
+        <div class="relative">
+          <img loading="lazy" src="${v.thumbnail || 'https://via.placeholder.com/320x180'}" class="w-full aspect-video object-cover"/>
+          <div class="absolute inset-0 bg-gradient-to-t from-[#101420] via-transparent to-transparent"></div>
+          <span class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-400 text-black">🔥 TOP</span>
+          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/75 text-[10px] font-bold text-amber-300">${v.parts_count} Parts</span>
         </div>
-      </div>`).join("");
+        <div class="p-2.5">
+          <div class="text-xs font-extrabold line-clamp-1">${v.title}</div>
+          <div class="text-[10px] text-amber-400 mt-0.5">👁 ${v.views} Views</div>
+        </div>
+      </div>`;
+    }).join("");
+    startAutoScroll();
   } else if (q || page === 1) {
     document.getElementById("trendingSection").classList.add("hidden");
   }
 
   const grid = document.getElementById("latestGrid");
   if (reset) grid.innerHTML = "";
-  grid.innerHTML += data.latest.map(v => `
-    <div onclick="openVideo('${v.id}')" class="rgb-card p-1 cursor-pointer">
-      <div class="relative">
-        <img src="${v.thumbnail || 'https://via.placeholder.com/320x180'}" class="w-full aspect-video object-cover rounded-lg"/>
-        <span class="absolute bottom-1 right-1 bg-black/75 text-[10px] px-1.5 py-0.5 rounded font-semibold">${v.parts_count} Parts</span>
-      </div>
-      <div class="p-2">
-        <div class="text-xs font-bold line-clamp-2">${v.title}</div>
-        <div class="text-[10px] text-gray-400 mt-1">👁 ${v.views} • ${v.created_at}</div>
-      </div>
-    </div>`).join("");
-
+  grid.innerHTML += data.latest.map(v => buildCineCard(v)).join("");
   document.getElementById("loadMoreBtn").classList.toggle("hidden", data.latest.length < 16);
 }
 
+function startAutoScroll() {
+  clearInterval(trendScrollInt);
+  const el = document.getElementById("trendingList");
+  let paused = false;
+  el.addEventListener("touchstart", () => paused = true, { passive: true });
+  el.addEventListener("touchend", () => setTimeout(() => paused = false, 2000), { passive: true });
+  trendScrollInt = setInterval(() => {
+    if (paused || el.classList.contains("hidden")) return;
+    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 10) {
+      el.scrollTo({ left: 0, behavior: "smooth" });
+    } else {
+      el.scrollBy({ left: 252, behavior: "smooth" });
+    }
+  }, 3500);
+}
+
 function loadMore() { page++; loadVideos(false); }
-function debounceSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadVideos(true), 400); }
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    switchTab("home", false);
+    loadVideos(true);
+  }, 400);
+}
+
+function switchTab(tab, focusSearch=true) {
+  tg.HapticFeedback.selectionChanged();
+  tg.BackButton.hide();
+  ["homeView", "topView", "savedView", "profileView", "detailView"].forEach(id => document.getElementById(id).classList.add("hidden"));
+  ["home", "top", "search", "saved", "profile"].forEach(n => {
+    const el = document.getElementById("nav-" + n);
+    el.classList.remove("nav-active");
+    el.classList.add("text-gray-400");
+  });
+  const activeNav = document.getElementById("nav-" + tab);
+  if (activeNav) { activeNav.classList.add("nav-active"); activeNav.classList.remove("text-gray-400"); }
+
+  document.getElementById("searchWrap").classList.toggle("hidden", tab === "profile" || tab === "saved");
+
+  if (tab === "home") {
+    document.getElementById("homeView").classList.remove("hidden");
+  } else if (tab === "search") {
+    document.getElementById("homeView").classList.remove("hidden");
+    if (focusSearch) document.getElementById("searchInput").focus();
+  } else if (tab === "top") {
+    document.getElementById("topView").classList.remove("hidden");
+    document.getElementById("topFullGrid").innerHTML = ALL_TRENDING.length
+      ? ALL_TRENDING.map(v => buildCineCard(v, "🔥 TRENDING")).join("")
+      : `<p class="text-xs text-gray-400 text-center py-10">গত ২৪ ঘণ্টায় কোনো ট্রেন্ডিং ভিডিও নেই।</p>`;
+  } else if (tab === "saved") {
+    document.getElementById("savedView").classList.remove("hidden");
+    renderSaved();
+  } else if (tab === "profile") {
+    document.getElementById("profileView").classList.remove("hidden");
+  }
+}
+
+function renderSaved() {
+  const list = getSaved();
+  document.getElementById("savedGrid").innerHTML = list.length
+    ? list.map(v => buildCineCard(v, "❤️ SAVED")).join("")
+    : `<p class="text-xs text-gray-400 text-center py-10">আপনি এখনো কোনো ভিডিও সেভ করেননি।</p>`;
+}
 
 async function openVideo(id) {
   tg.HapticFeedback.impactOccurred("light");
   const vid = await api(`/api/video/${id}`);
   CUR_VID = vid;
-  document.getElementById("homeView").classList.add("hidden");
+  ["homeView", "topView", "savedView", "profileView", "searchWrap"].forEach(x => document.getElementById(x).classList.add("hidden"));
   document.getElementById("detailView").classList.remove("hidden");
+  tg.BackButton.show();
+  tg.BackButton.onClick(showHome);
+
   document.getElementById("detThumb").src = vid.thumbnail || "https://via.placeholder.com/640x360";
   document.getElementById("detTitle").innerText = vid.title;
   document.getElementById("detMeta").innerText = `👁 ${vid.views} Views • 🎞️ ${vid.parts.length} Parts`;
+  renderCurrentSaveStates();
 
-  // Range tabs for 50-100 parts
   const tabs = document.getElementById("partTabs");
   tabs.innerHTML = "";
   const chunkSize = 20;
   for (let i = 0; i < vid.parts.length; i += chunkSize) {
     const start = i + 1, end = Math.min(i + chunkSize, vid.parts.length);
-    tabs.innerHTML += `<button onclick="renderParts(${i}, ${end})" class="px-3 py-1.5 rounded-lg bg-white/10 text-xs font-semibold whitespace-nowrap">Parts ${start}-${end}</button>`;
+    tabs.innerHTML += `<button onclick="renderParts(${i}, ${end})" class="px-3.5 py-1.5 rounded-xl bg-white/10 text-xs font-bold whitespace-nowrap">Parts ${start}-${end}</button>`;
   }
   renderParts(0, Math.min(chunkSize, vid.parts.length));
 }
@@ -237,26 +416,24 @@ async function openVideo(id) {
 function renderParts(start, end) {
   const slice = CUR_VID.parts.slice(start, end);
   document.getElementById("partsList").innerHTML = slice.map(p => `
-    <div class="glass rounded-xl p-3 flex items-center justify-between">
+    <div class="glass rounded-2xl p-3.5 flex items-center justify-between">
       <div>
         <div class="text-sm font-bold">${p.title}</div>
         <div class="text-[11px] text-gray-400">${p.size} MB</div>
       </div>
       ${(p.unlocked || USER.is_vip)
-        ? `<button onclick="deliverVideo(${p.part_num}, 'vip')" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 text-black text-xs font-bold">📥 Get Video</button>`
-        : `<button onclick="clickUnlock(${p.part_num}, '${p.title}')" class="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 text-white text-xs font-bold">🔒 Unlock</button>`
+        ? `<button onclick="deliverVideo(${p.part_num}, 'vip')" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 text-black text-xs font-extrabold shadow">📥 Get Video</button>`
+        : `<button onclick="clickUnlock(${p.part_num}, '${p.title}')" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 text-white text-xs font-extrabold shadow">🔒 Unlock</button>`
       }
     </div>`).join("");
 }
 
-function showHome() {
-  document.getElementById("detailView").classList.add("hidden");
-  document.getElementById("homeView").classList.remove("hidden");
-}
+function showHome() { switchTab("home"); }
 
 async function clickUnlock(partNum, title) {
   CUR_PART = partNum;
   document.getElementById("unlockPartName").innerText = `${CUR_VID.title} - ${title}`;
+  document.getElementById("antiCheatMsg").classList.add("hidden");
   document.getElementById("unlockModal").classList.remove("hidden");
   document.getElementById("timerBox").classList.add("hidden");
   await verifyJoin();
@@ -268,13 +445,15 @@ async function verifyJoin() {
     document.getElementById("forceJoinBox").classList.remove("hidden");
     document.getElementById("adOptionsBox").classList.add("hidden");
     document.getElementById("forceChannelBtns").innerHTML = res.missing.map(c =>
-      `<a href="${c.url}" target="_blank" class="block w-full py-2 px-3 rounded-lg bg-white/10 text-xs font-bold text-cyan-300">📢 ${c.name} (Join)</a>`
+      `<a href="${c.url}" target="_blank" class="block w-full py-2.5 px-3 rounded-xl bg-white/10 text-xs font-bold text-cyan-300">📢 ${c.name} (Join)</a>`
     ).join("");
   } else {
     document.getElementById("forceJoinBox").classList.add("hidden");
     document.getElementById("adOptionsBox").classList.remove("hidden");
     document.getElementById("btnMonetag").classList.toggle("hidden", !CONFIG.monetag_zone_id);
-    document.getElementById("btnDirect").classList.toggle("hidden", !CONFIG.has_direct_links);
+    const dirBtn = document.getElementById("btnDirect");
+    dirBtn.classList.toggle("hidden", !CONFIG.has_direct_links);
+    dirBtn.innerText = `🔗 বিজ্ঞাপন দেখে আনলক (${CONFIG.ad_timer} সেকেন্ড)`;
   }
 }
 
@@ -287,30 +466,55 @@ function startMonetagAd() {
   }
 }
 
+// Direct Link Ad with Strict Anti-Cheat Visibility Check
 async function startDirectAd() {
   const res = await api("/api/unlock/direct-link", "POST", { initData });
   adRequiredSec = res.timer;
   adStartTime = Date.now();
-  tg.openLink(res.url);
-
+  adActive = true;
+  document.getElementById("antiCheatMsg").classList.add("hidden");
   document.getElementById("adOptionsBox").classList.add("hidden");
   document.getElementById("timerBox").classList.remove("hidden");
+  document.getElementById("timerSec").innerText = adRequiredSec + "s";
+
+  tg.openLink(res.url);
 
   clearInterval(adTimerInterval);
   adTimerInterval = setInterval(() => {
+    if (!adActive) return;
     const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
     const left = Math.max(0, adRequiredSec - elapsed);
     document.getElementById("timerSec").innerText = left + "s";
-    if (left === 0) {
+    if (left === 0 && !document.hidden) {
+      adActive = false;
       clearInterval(adTimerInterval);
-      deliverVideo(CUR_PART, "ad");
+      deliverVideo(CUR_PART, "direct");
     }
   }, 500);
 }
 
-async function unlockWithCoin() {
-  await deliverVideo(CUR_PART, "coin");
-}
+document.addEventListener("visibilitychange", () => {
+  if (!adActive) return;
+  if (!document.hidden) {
+    const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
+    if (elapsed < adRequiredSec) {
+      adActive = false;
+      clearInterval(adTimerInterval);
+      document.getElementById("timerBox").classList.add("hidden");
+      document.getElementById("adOptionsBox").classList.remove("hidden");
+      const msg = document.getElementById("antiCheatMsg");
+      msg.innerText = `⚠️ আপনি ${elapsed} সেকেন্ডেই ফিরে এসেছেন! ভিডিও আনলক করতে বিজ্ঞাপনের পেজে অন্তত ${adRequiredSec} সেকেন্ড অপেক্ষা করুন।`;
+      msg.classList.remove("hidden");
+      tg.HapticFeedback.notificationOccurred("error");
+    } else {
+      adActive = false;
+      clearInterval(adTimerInterval);
+      deliverVideo(CUR_PART, "direct");
+    }
+  }
+});
+
+async function unlockWithCoin() { await deliverVideo(CUR_PART, "coin"); }
 
 async function deliverVideo(partNum, method) {
   try {
@@ -326,9 +530,7 @@ async function deliverVideo(partNum, method) {
   }
 }
 
-function closeUnlock() { clearInterval(adTimerInterval); document.getElementById("unlockModal").classList.add("hidden"); }
-function openProfile() { document.getElementById("profileModal").classList.remove("hidden"); }
-function closeProfile() { document.getElementById("profileModal").classList.add("hidden"); }
+function closeUnlock() { adActive = false; clearInterval(adTimerInterval); document.getElementById("unlockModal").classList.add("hidden"); }
 
 async function doCheckin() {
   try {
