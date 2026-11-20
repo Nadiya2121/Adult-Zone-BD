@@ -34,6 +34,7 @@ dp = Dispatcher(storage=MemoryStorage())
 
 FEED_CACHE = {"data": None, "expires": 0}
 AD_SESSIONS = {}
+UPLOAD_LOCK = asyncio.Lock()
 
 def clear_feed_cache():
     FEED_CACHE["data"] = None
@@ -312,7 +313,7 @@ async def cb_my_ref(call: types.CallbackQuery):
     await log_bot_msg(uid, sent.message_id)
     await call.answer()
 
-# Zero-Command Admin Video Upload
+# Zero-Command Admin Video Upload (With Concurrency Lock)
 @dp.message(F.video | F.document)
 async def handle_admin_video(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
@@ -324,34 +325,35 @@ async def handle_admin_video(message: types.Message, state: FSMContext):
     if message.document and not (message.document.mime_type or "").startswith("video"):
         return
 
-    copied = await bot.copy_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=message.chat.id, message_id=message.message_id)
-    part_data = {
-        "file_id": media.file_id,
-        "message_id": copied.message_id,
-        "file_size": round((media.file_size or 0) / (1024 * 1024), 2),
-        "duration": getattr(media, "duration", 0)
-    }
+    async with UPLOAD_LOCK:
+        copied = await bot.copy_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=message.chat.id, message_id=message.message_id)
+        part_data = {
+            "file_id": media.file_id,
+            "message_id": copied.message_id,
+            "file_size": round((media.file_size or 0) / (1024 * 1024), 2),
+            "duration": getattr(media, "duration", 0)
+        }
 
-    current_state = await state.get_state()
-    if current_state == UploadState.batch_parts.state:
-        data = await state.get_data()
-        vid_id = ObjectId(data["target_vid_id"])
-        vid = await videos_col.find_one({"_id": vid_id})
-        next_num = len(vid.get("parts", [])) + 1
-        part_data["part_num"] = next_num
-        part_data["title"] = f"Part {next_num:02d}"
-        await videos_col.update_one({"_id": vid_id}, {"$push": {"parts": part_data}})
-        clear_feed_cache()
-        await message.reply(f"✅ <b>Part {next_num:02d}</b> যুক্ত হয়েছে! আরও ভিডিও পাঠান অথবা নিচের Done বাটনে চাপুন।", parse_mode="HTML")
-        return
+        current_state = await state.get_state()
+        if current_state == UploadState.batch_parts.state:
+            data = await state.get_data()
+            vid_id = ObjectId(data["target_vid_id"])
+            vid = await videos_col.find_one({"_id": vid_id})
+            next_num = len(vid.get("parts", [])) + 1
+            part_data["part_num"] = next_num
+            part_data["title"] = f"Part {next_num:02d}"
+            await videos_col.update_one({"_id": vid_id}, {"$push": {"parts": part_data}})
+            clear_feed_cache()
+            await message.reply(f"✅ <b>Part {next_num:02d}</b> যুক্ত হয়েছে! আরও ভিডিও পাঠান অথবা নিচের Done বাটনে চাপুন।", parse_mode="HTML")
+            return
 
-    await state.update_data(first_part=part_data)
-    await state.set_state(UploadState.waiting_type)
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 নতুন ভিডিও (New)", callback_data="up_new"),
-        InlineKeyboardButton(text="🟡 আগের ভিডিও (Add Parts)", callback_data="up_old")
-    ]])
-    await message.reply("🎬 ভিডিওটি পাওয়া গেছে! এটি কি নতুন ভিডিও নাকি আগের ভিডিওর পার্ট?", reply_markup=kb)
+        await state.update_data(first_part=part_data)
+        await state.set_state(UploadState.waiting_type)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🟢 নতুন ভিডিও (New)", callback_data="up_new"),
+            InlineKeyboardButton(text="🟡 আগের ভিডিও (Add Parts)", callback_data="up_old")
+        ]])
+        await message.reply("🎬 ভিডিওটি পাওয়া গেছে! এটি কি নতুন ভিডিও নাকি আগের ভিডিওর পার্ট?", reply_markup=kb)
 
 @dp.callback_query(F.data == "up_new")
 async def cb_up_new(call: types.CallbackQuery, state: FSMContext):
