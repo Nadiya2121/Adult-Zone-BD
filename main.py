@@ -703,10 +703,17 @@ async def admin_stats(x_admin_pass: str = Header(None)):
     verify_admin(x_admin_pass)
     now = datetime.now(timezone.utc)
     total_users = await users_col.count_documents({})
+    live_online = await users_col.count_documents({"last_active": {"$gte": now - timedelta(minutes=5)}})
     active_24h = await users_col.count_documents({"last_active": {"$gte": now - timedelta(hours=24)}})
     total_videos = await videos_col.count_documents({})
     trending_24h = await trending_col.count_documents({})
-    return {"total_users": total_users, "active_24h": active_24h, "total_videos": total_videos, "unlocks_24h": trending_24h}
+    return {
+        "total_users": total_users,
+        "live_online": live_online,
+        "active_24h": active_24h,
+        "total_videos": total_videos,
+        "unlocks_24h": trending_24h
+    }
 
 @app.get("/api/admin/settings")
 async def admin_get_settings(x_admin_pass: str = Header(None)):
