@@ -8,7 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background: #07090f; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
-    .glass { background: rgba(18, 22, 34, 0.82); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
+    .glass { background: rgba(18, 22, 34, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
     .cine-card { position: relative; border-radius: 18px; overflow: hidden; background: #101420; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8); }
     .shimmer { background: linear-gradient(90deg, #121624 25%, #1d2438 50%, #121624 75%); background-size: 200% 100%; animation: shim 1.4s infinite; }
     @keyframes shim { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -18,6 +18,13 @@
 </head>
 <body class="pb-24 select-none">
 
+  <!-- Maintenance Screen Overlay -->
+  <div id="maintenanceScreen" class="hidden fixed inset-0 z-[100] bg-[#07090f] flex flex-col items-center justify-center p-6 text-center space-y-4">
+    <div class="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-3xl animate-bounce">🚧</div>
+    <h2 class="text-xl font-extrabold text-amber-400">সার্ভার আপডেট চলছে</h2>
+    <p id="maintenanceMsg" class="text-sm text-gray-300 max-w-xs leading-relaxed"></p>
+  </div>
+
   <!-- Top Header -->
   <header class="sticky top-0 z-40 glass px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2.5">
@@ -25,6 +32,7 @@
       <h1 id="appTitle" class="font-extrabold text-lg tracking-wide bg-gradient-to-r from-white via-cyan-100 to-cyan-400 bg-clip-text text-transparent">VideoVault</h1>
     </div>
     <div class="flex items-center gap-2">
+      <button onclick="openRequestModal()" class="px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-[11px] font-bold text-purple-300">📩 Request</button>
       <span id="vipBadge" class="hidden px-2.5 py-1 rounded-full text-[11px] font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow">👑 VIP</span>
       <button onclick="switchTab('profile')" class="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-bold flex items-center gap-1">
         🪙 <span id="coinCount">0</span>
@@ -64,10 +72,27 @@
     </section>
   </main>
 
-  <!-- TOP TRENDING FULL TAB -->
+  <!-- TOP & WEEKLY CONTEST TAB -->
   <main id="topView" class="hidden px-4 mt-4 space-y-4">
-    <h2 class="text-base font-extrabold text-amber-400">🔥 ২৪ ঘণ্টার সেরা ভিডিওসমূহ</h2>
-    <div id="topFullGrid" class="grid grid-cols-1 gap-4"></div>
+    <div class="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-white/5 border border-white/10">
+      <button onclick="switchTopSub('videos')" id="subTopVid" class="py-2 rounded-xl text-xs font-extrabold bg-amber-400 text-black">🔥 টপ ভিডিও</button>
+      <button onclick="switchTopSub('contest')" id="subTopContest" class="py-2 rounded-xl text-xs font-extrabold text-gray-300">🏆 রেফারেল কনটেস্ট</button>
+    </div>
+
+    <div id="topVideosBox" class="grid grid-cols-1 gap-4"></div>
+
+    <div id="contestBox" class="hidden space-y-4">
+      <div class="glass rounded-3xl p-4 border border-amber-400/30 bg-gradient-to-br from-amber-500/10 to-purple-500/10 space-y-2 text-center">
+        <div class="text-2xl">🏆</div>
+        <h3 class="font-extrabold text-base text-amber-400">সাপ্তাহিক রেফারেল প্রতিযোগিতা</h3>
+        <p id="contestPrizeText" class="text-xs text-white font-semibold"></p>
+        <p id="contestEndText" class="text-[11px] text-cyan-300"></p>
+        <div class="pt-2 flex items-center justify-center gap-3 text-xs">
+          <span class="px-3 py-1 rounded-full bg-white/10 font-bold">আপনার সাপ্তাহিক রেফার: <b id="myWeeklyRefs" class="text-amber-400">0</b></span>
+        </div>
+      </div>
+      <div id="leaderboardList" class="space-y-2"></div>
+    </div>
   </main>
 
   <!-- SAVED / BOOKMARKS TAB -->
@@ -76,16 +101,20 @@
     <div id="savedGrid" class="grid grid-cols-1 gap-4"></div>
   </main>
 
-  <!-- PROFILE & VIP TAB -->
+  <!-- PROFILE, TASKS & SUPPORT TAB -->
   <main id="profileView" class="hidden px-4 mt-4 space-y-4">
     <div class="glass rounded-3xl p-5 space-y-4">
-      <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-400 to-purple-500 flex items-center justify-center text-xl font-bold text-black">👤</div>
-        <div>
-          <h3 id="profName" class="font-bold text-base">User</h3>
-          <span id="profVip" class="text-xs font-semibold text-emerald-400">Free Member</span>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-400 to-purple-500 flex items-center justify-center text-xl font-bold text-black">👤</div>
+          <div>
+            <h3 id="profName" class="font-bold text-base">User</h3>
+            <span id="profVip" class="text-xs font-semibold text-emerald-400">Free Member</span>
+          </div>
         </div>
+        <button onclick="openSupportModal()" class="px-3 py-2 rounded-xl bg-cyan-500/20 border border-cyan-400/30 text-xs font-bold text-cyan-300">💬 Support</button>
       </div>
+
       <div class="grid grid-cols-2 gap-3 text-center">
         <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
           <div class="text-xs text-gray-400">মোট কয়েন</div>
@@ -96,8 +125,15 @@
           <div id="profSavedCount" class="text-2xl font-extrabold text-pink-400 mt-1">0</div>
         </div>
       </div>
+
       <button onclick="doCheckin()" class="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-400 to-teal-500 text-black shadow-lg">🎁 ডেইলি চেক-ইন (+কয়েন)</button>
       <button onclick="buyVip()" id="buyVipBtn" class="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow-lg">👑 ১ দিনের VIP কিনুন (50 কয়েন)</button>
+
+      <div class="grid grid-cols-2 gap-2.5">
+        <button onclick="openRequestModal()" class="py-3 rounded-2xl bg-white/10 border border-white/10 text-xs font-bold text-purple-300">📩 ভিডিও রিকোয়েস্ট</button>
+        <button onclick="openSupportModal()" class="py-3 rounded-2xl bg-white/10 border border-white/10 text-xs font-bold text-cyan-300">🖼️ ছবিসহ সাপোর্ট</button>
+      </div>
+
       <div class="p-3.5 rounded-2xl bg-white/5 space-y-2">
         <div class="text-xs text-gray-300 font-semibold">🔗 বন্ধুদের ইনভাইট করে কয়েন আয় করুন:</div>
         <div class="flex gap-2">
@@ -106,27 +142,41 @@
         </div>
       </div>
     </div>
+
+    <!-- Earn Coins Task Center -->
+    <div id="taskSection" class="hidden glass rounded-3xl p-5 space-y-3">
+      <h3 class="font-extrabold text-sm text-amber-400">🎯 টাস্ক কমপ্লিট করে ফ্রি কয়েন আয় করুন</h3>
+      <div id="taskList" class="space-y-2.5"></div>
+    </div>
   </main>
 
   <!-- VIDEO DETAIL & PARTS VIEW -->
   <main id="detailView" class="hidden px-4 mt-4 space-y-4">
-    <button onclick="goBackOneStep()" class="px-3 py-1.5 rounded-xl bg-white/10 text-xs text-cyan-400 font-bold">← ফিরে যান</button>
+    <div class="flex items-center justify-between">
+      <button onclick="goBackOneStep()" class="px-3 py-1.5 rounded-xl bg-white/10 text-xs text-cyan-400 font-bold">← ফিরে যান</button>
+      <button onclick="shareViralVideo()" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 text-black text-xs font-extrabold">🚀 শেয়ার করে কয়েন আয়</button>
+    </div>
+
     <div class="cine-card">
       <div class="relative">
         <img id="detThumb" class="w-full aspect-video object-cover" />
         <div class="absolute inset-0 bg-gradient-to-t from-[#101420] via-transparent to-transparent"></div>
         <button id="detSaveBtn" onclick="toggleSaveCurrent()" class="absolute top-3 right-3 px-3 py-1.5 rounded-full glass text-xs font-bold">🤍 Save</button>
       </div>
-      <div class="p-4">
-        <h2 id="detTitle" class="font-extrabold text-base leading-snug"></h2>
-        <p id="detMeta" class="text-xs text-gray-400 mt-1.5"></p>
+      <div class="p-4 space-y-3">
+        <div>
+          <h2 id="detTitle" class="font-extrabold text-base leading-snug"></h2>
+          <p id="detMeta" class="text-xs text-gray-400 mt-1.5"></p>
+        </div>
+        <button id="btnUnlockAll" onclick="unlockAllParts()" class="hidden w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-black text-xs font-extrabold shadow-lg"></button>
       </div>
     </div>
+
     <div id="partTabs" class="flex gap-2 overflow-x-auto no-scrollbar"></div>
     <div id="partsList" class="space-y-2.5"></div>
   </main>
 
-  <!-- UNLOCK MODAL (With Anti-Cheat) -->
+  <!-- UNLOCK MODAL (Waterfall + Share + Coin + Anti-Cheat) -->
   <div id="unlockModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
     <div class="glass w-full max-w-sm rounded-3xl p-5 space-y-3.5 text-center">
       <h3 class="font-extrabold text-base">🔓 ভিডিও আনলক করুন</h3>
@@ -135,16 +185,46 @@
 
       <div id="adOptionsBox" class="space-y-2.5">
         <button id="btnMonetag" onclick="startMonetagAd()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg">📺 বিজ্ঞাপন দেখে আনলক (Monetag)</button>
-        <button id="btnDirect" onclick="startDirectAd()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg">🔗 ডাইরেক্ট লিংক বিজ্ঞাপন</button>
+        <button id="btnDirect" onclick="startDirectAd(false)" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg">🔗 ডাইরেক্ট লিংক বিজ্ঞাপন</button>
+        <button id="btnShareUnlock" onclick="startShareUnlock()" class="hidden w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-400 to-teal-500 text-black shadow-lg">📤 বন্ধুদের শেয়ার করে ফ্রি আনলক</button>
         <button onclick="unlockWithCoin()" class="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black shadow-lg">🪙 ১০ কয়েন দিয়ে আনলক</button>
       </div>
 
       <div id="timerBox" class="hidden py-4 space-y-2">
         <div class="text-3xl font-extrabold text-amber-400 animate-pulse" id="timerSec">15s</div>
-        <p class="text-xs text-gray-300 leading-relaxed">বিজ্ঞাপনের পেজে নির্ধারিত সময় অপেক্ষা করে তারপর এখানে ফিরে আসুন। আগে ফিরে আসলে আনলক হবে না!</p>
+        <p id="timerHint" class="text-xs text-gray-300 leading-relaxed">বিজ্ঞাপনের পেজে নির্ধারিত সময় অপেক্ষা করে তারপর এখানে ফিরে আসুন। আগে ফিরে আসলে আনলক হবে না!</p>
       </div>
 
       <button onclick="goBackOneStep()" class="text-xs text-gray-400 pt-1">বাতিল করুন</button>
+    </div>
+  </div>
+
+  <!-- VIDEO REQUEST MODAL -->
+  <div id="requestModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass w-full max-w-sm rounded-3xl p-5 space-y-3.5">
+      <div class="flex justify-between items-center">
+        <h3 class="font-extrabold text-base text-purple-300">📩 ভিডিও রিকোয়েস্ট করুন</h3>
+        <button onclick="goBackOneStep()" class="text-gray-400 text-xl">&times;</button>
+      </div>
+      <p class="text-xs text-gray-400">আপনার পছন্দের কোনো ভিডিও না পেলে নাম লিখে পাঠান, আমরা দ্রুত আপলোড করবো!</p>
+      <input id="reqTitleInput" type="text" placeholder="ভিডিওর নাম লিখুন..." class="w-full px-4 py-3 rounded-2xl bg-black/50 border border-white/10 text-sm focus:outline-none focus:border-purple-400"/>
+      <button onclick="submitRequest()" class="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-sm">🚀 রিকোয়েস্ট পাঠান</button>
+    </div>
+  </div>
+
+  <!-- SUPPORT MODAL (With Compressed Photo Upload) -->
+  <div id="supportModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass w-full max-w-sm rounded-3xl p-5 space-y-3.5">
+      <div class="flex justify-between items-center">
+        <h3 class="font-extrabold text-base text-cyan-300">💬 অ্যাডমিন সাপোর্ট</h3>
+        <button onclick="goBackOneStep()" class="text-gray-400 text-xl">&times;</button>
+      </div>
+      <textarea id="supMsgInput" rows="3" placeholder="আপনার সমস্যাটি বিস্তারিত লিখুন..." class="w-full px-3.5 py-2.5 rounded-2xl bg-black/50 border border-white/10 text-sm focus:outline-none focus:border-cyan-400"></textarea>
+      <label class="block w-full p-3 rounded-2xl bg-white/5 border border-dashed border-white/20 text-center text-xs text-gray-300 cursor-pointer">
+        <span id="supFileLabel">📷 স্ক্রিনশট / ছবি যুক্ত করুন (ঐচ্ছিক)</span>
+        <input id="supPhotoInput" type="file" accept="image/*" onchange="previewSupportPhoto()" class="hidden" />
+      </label>
+      <button id="supSendBtn" onclick="submitSupport()" class="w-full py-3 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 text-black font-extrabold text-sm">📤 মেসেজ পাঠান</button>
     </div>
   </div>
 
@@ -173,15 +253,27 @@ tg.expand();
 const initData = tg.initData;
 let USER = {}, CONFIG = {}, CUR_VID = null, CUR_PART = null, page = 1, searchTimer = null;
 let ALL_TRENDING = [], ALL_VIDEOS_MAP = {};
-let adStartTime = 0, adRequiredSec = 15, adActive = false, adTimerInterval = null, trendScrollInt = null;
-let lastTab = "home";
+let adStartTime = 0, adRequiredSec = 15, adActive = false, shareActive = false, adTimerInterval = null, trendScrollInt = null;
+let lastTab = "home", supPhotoBase64 = "";
 
 // 1-Step Mobile & Telegram Back Button Navigation
 history.replaceState({ view: "home" }, "");
 tg.BackButton.onClick(() => goBackOneStep());
 
+function anyOverlayOpen() {
+  return !document.getElementById("unlockModal").classList.contains("hidden") ||
+         !document.getElementById("requestModal").classList.contains("hidden") ||
+         !document.getElementById("supportModal").classList.contains("hidden");
+}
+
+function closeAllModals() {
+  _closeUnlockUI();
+  document.getElementById("requestModal").classList.add("hidden");
+  document.getElementById("supportModal").classList.add("hidden");
+}
+
 function goBackOneStep() {
-  if (!document.getElementById("unlockModal").classList.contains("hidden") ||
+  if (anyOverlayOpen() ||
       !document.getElementById("detailView").classList.contains("hidden") ||
       !document.getElementById("topView").classList.contains("hidden") ||
       !document.getElementById("savedView").classList.contains("hidden") ||
@@ -189,15 +281,15 @@ function goBackOneStep() {
     if (history.state && history.state.view !== "home") {
       history.back();
     } else {
+      closeAllModals();
       _renderTabUI("home");
     }
   }
 }
 
 window.addEventListener("popstate", (e) => {
-  const modal = document.getElementById("unlockModal");
-  if (!modal.classList.contains("hidden")) {
-    _closeUnlockUI();
+  if (anyOverlayOpen()) {
+    closeAllModals();
     return;
   }
   const view = e.state?.view || "home";
@@ -253,16 +345,24 @@ async function init() {
   try {
     const res = await api("/api/auth", "POST", { initData });
     USER = res.user; CONFIG = res.config;
+
+    if (CONFIG.maintenance_mode) {
+      document.getElementById("maintenanceMsg").innerText = CONFIG.maintenance_msg || "সার্ভার আপডেট চলছে!";
+      document.getElementById("maintenanceScreen").classList.remove("hidden");
+      return;
+    }
+
     document.getElementById("appTitle").innerText = CONFIG.app_name;
     if (CONFIG.welcome_notice) {
       document.getElementById("noticeText").innerText = CONFIG.welcome_notice;
       document.getElementById("noticeBanner").classList.remove("hidden");
     }
     updateUserUI();
+    renderTasks();
 
     if (CONFIG.monetag_zone_id) {
       const s = document.createElement("script");
-      s.src = "//libtl.com/sdk.js";
+      s.src = "https://libtl.com/sdk.js";
       s.setAttribute("data-zone", CONFIG.monetag_zone_id);
       s.setAttribute("data-sdk", `show_${CONFIG.monetag_zone_id}`);
       document.head.appendChild(s);
@@ -271,7 +371,10 @@ async function init() {
     await loadVideos(true);
     const urlVid = new URLSearchParams(window.location.search).get("vid");
     const startParam = tg.initDataUnsafe?.start_param || "";
-    const targetVid = urlVid || (startParam.startsWith("vid_") ? startParam.replace("vid_", "") : "");
+    let targetVid = urlVid || "";
+    if (!targetVid && startParam.startsWith("vid_")) {
+      targetVid = startParam.split("_ref_")[0].replace("vid_", "");
+    }
     if (targetVid) openVideo(targetVid);
   } catch (e) { console.error(e); }
 }
@@ -281,12 +384,55 @@ function updateUserUI() {
   document.getElementById("profCoins").innerText = USER.coins;
   document.getElementById("profName").innerText = USER.name || "User";
   document.getElementById("profSavedCount").innerText = getSaved().length;
+  document.getElementById("myWeeklyRefs").innerText = USER.weekly_refs || 0;
   document.getElementById("refLinkInput").value = USER.ref_link || "";
   document.getElementById("buyVipBtn").innerText = `👑 ১ দিনের VIP কিনুন (${CONFIG.vip_coin_price} কয়েন)`;
   if (USER.is_vip) {
     document.getElementById("vipBadge").classList.remove("hidden");
     document.getElementById("profVip").innerText = "👑 Active VIP Member";
   }
+}
+
+function renderTasks() {
+  const tasks = CONFIG.tasks || [];
+  if (!tasks.length) {
+    document.getElementById("taskSection").classList.add("hidden");
+    return;
+  }
+  document.getElementById("taskSection").classList.remove("hidden");
+  const done = USER.completed_tasks || [];
+  document.getElementById("taskList").innerHTML = tasks.map(t => {
+    const isDone = done.includes(t.id);
+    return `
+    <div class="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between gap-2">
+      <div>
+        <div class="text-xs font-bold">${t.title}</div>
+        <div class="text-[11px] text-amber-400 font-semibold">+${t.reward} কয়েন</div>
+      </div>
+      ${isDone
+        ? `<span class="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 text-xs font-bold">✅ Claimed</span>`
+        : `<button onclick="startTask('${t.id}', '${t.url}')" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-black text-xs font-extrabold">Claim</button>`
+      }
+    </div>`;
+  }).join("");
+}
+
+async function startTask(id, url) {
+  if (url) {
+    if (url.includes("t.me/")) tg.openTelegramLink(url);
+    else tg.openLink(url);
+  }
+  setTimeout(async () => {
+    try {
+      const res = await api("/api/task/complete", "POST", { initData, task_id: id });
+      USER.coins = res.coins;
+      USER.completed_tasks = res.completed_tasks;
+      updateUserUI();
+      renderTasks();
+      tg.HapticFeedback.notificationOccurred("success");
+      alert(`🎉 অভিনন্দন! +${res.reward} কয়েন যুক্ত হয়েছে!`);
+    } catch (e) { alert(e.message); }
+  }, 2000);
 }
 
 function buildCineCard(v, badgeText="✨ NEW") {
@@ -384,7 +530,7 @@ function switchTab(tab, focusSearch=true) {
 function _renderTabUI(tab, focusSearch=true) {
   lastTab = tab;
   tg.HapticFeedback.selectionChanged();
-  _closeUnlockUI();
+  closeAllModals();
   ["homeView", "topView", "savedView", "profileView", "detailView"].forEach(id => document.getElementById(id).classList.add("hidden"));
   ["home", "top", "search", "saved", "profile"].forEach(n => {
     const el = document.getElementById("nav-" + n);
@@ -394,7 +540,7 @@ function _renderTabUI(tab, focusSearch=true) {
   const activeNav = document.getElementById("nav-" + tab);
   if (activeNav) { activeNav.classList.add("nav-active"); activeNav.classList.remove("text-gray-400"); }
 
-  document.getElementById("searchWrap").classList.toggle("hidden", tab === "profile" || tab === "saved");
+  document.getElementById("searchWrap").classList.toggle("hidden", tab === "profile" || tab === "saved" || tab === "top");
 
   if (tab === "home") {
     tg.BackButton.hide();
@@ -406,15 +552,40 @@ function _renderTabUI(tab, focusSearch=true) {
       if (focusSearch) document.getElementById("searchInput").focus();
     } else if (tab === "top") {
       document.getElementById("topView").classList.remove("hidden");
-      document.getElementById("topFullGrid").innerHTML = ALL_TRENDING.length
-        ? ALL_TRENDING.map(v => buildCineCard(v, "🔥 TRENDING")).join("")
-        : `<p class="text-xs text-gray-400 text-center py-10">গত ২৪ ঘণ্টায় কোনো ট্রেন্ডিং ভিডিও নেই।</p>`;
+      switchTopSub("videos");
     } else if (tab === "saved") {
       document.getElementById("savedView").classList.remove("hidden");
       renderSaved();
     } else if (tab === "profile") {
       document.getElementById("profileView").classList.remove("hidden");
     }
+  }
+}
+
+async function switchTopSub(sub) {
+  document.getElementById("subTopVid").className = sub === "videos" ? "py-2 rounded-xl text-xs font-extrabold bg-amber-400 text-black" : "py-2 rounded-xl text-xs font-extrabold text-gray-300";
+  document.getElementById("subTopContest").className = sub === "contest" ? "py-2 rounded-xl text-xs font-extrabold bg-amber-400 text-black" : "py-2 rounded-xl text-xs font-extrabold text-gray-300";
+  document.getElementById("topVideosBox").classList.toggle("hidden", sub !== "videos");
+  document.getElementById("contestBox").classList.toggle("hidden", sub !== "contest");
+
+  if (sub === "videos") {
+    document.getElementById("topVideosBox").innerHTML = ALL_TRENDING.length
+      ? ALL_TRENDING.map(v => buildCineCard(v, "🔥 TRENDING")).join("")
+      : `<p class="text-xs text-gray-400 text-center py-10">গত ২৪ ঘণ্টায় কোনো ট্রেন্ডিং ভিডিও নেই।</p>`;
+  } else {
+    document.getElementById("contestPrizeText").innerText = CONFIG.contest_prize || "🏆 সেরা রেফারারদের জন্য আকর্ষণীয় পুরস্কার!";
+    document.getElementById("contestEndText").innerText = CONFIG.contest_end_date ? `⏳ শেষ তারিখ: ${CONFIG.contest_end_date}` : "";
+    const list = await api("/api/leaderboard");
+    document.getElementById("leaderboardList").innerHTML = list.length
+      ? list.map((u, idx) => `
+        <div class="glass rounded-2xl p-3.5 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="w-7 h-7 rounded-full ${idx < 3 ? 'bg-amber-400 text-black' : 'bg-white/10 text-gray-300'} flex items-center justify-center text-xs font-extrabold">${idx + 1}</span>
+            <span class="text-sm font-bold">${u.name}</span>
+          </div>
+          <span class="text-xs font-extrabold text-cyan-400">${u.refs} Referrals</span>
+        </div>`).join("")
+      : `<p class="text-xs text-gray-400 text-center py-8">এখনো কেউ রেফার করেনি। প্রথম হওয়ার সুযোগ নিন!</p>`;
   }
 }
 
@@ -443,6 +614,14 @@ function _renderDetailUI() {
   document.getElementById("detMeta").innerText = `👁 ${CUR_VID.views} Views • 🎞️ ${CUR_VID.parts.length} Parts`;
   renderCurrentSaveStates();
 
+  const btnAll = document.getElementById("btnUnlockAll");
+  if (CUR_VID.parts.length > 1 && !CUR_VID.all_unlocked && !USER.is_vip) {
+    btnAll.innerText = `🔓 সব ${CUR_VID.parts.length}টি পার্ট একসাথে আনলক (${CONFIG.unlock_all_coin_price} কয়েন)`;
+    btnAll.classList.remove("hidden");
+  } else {
+    btnAll.classList.add("hidden");
+  }
+
   const tabs = document.getElementById("partTabs");
   tabs.innerHTML = "";
   const chunkSize = 20;
@@ -463,15 +642,36 @@ function renderParts(start, end) {
       </div>
       ${(p.unlocked || USER.is_vip)
         ? `<button onclick="deliverVideo(${p.part_num}, 'vip')" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 text-black text-xs font-extrabold shadow">📥 Get Video</button>`
-        : `<button onclick="clickUnlock(${p.part_num}, '${p.title}')" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 text-white text-xs font-extrabold shadow">🔒 Unlock</button>`
+        : `<button onclick="clickUnlock(${p.part_num})" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 text-white text-xs font-extrabold shadow">🔒 Unlock</button>`
       }
     </div>`).join("");
 }
 
-function clickUnlock(partNum, title) {
+function shareViralVideo() {
+  if (!CUR_VID) return;
+  const comboUrl = `https://t.me/${CONFIG.bot_username}?start=vid_${CUR_VID.id}_ref_${USER.id}`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(comboUrl)}&text=${encodeURIComponent("🎬 দেখুন: " + CUR_VID.title)}`;
+  tg.openTelegramLink(shareUrl);
+}
+
+async function unlockAllParts() {
+  if (!confirm(`${CONFIG.unlock_all_coin_price} কয়েন দিয়ে সব পার্ট আনলক করবেন?`)) return;
+  try {
+    const res = await api("/api/unlock/complete", "POST", { initData, video_id: CUR_VID.id, part_num: 0, method: "coin_all" });
+    USER.coins = res.coins;
+    updateUserUI();
+    CUR_VID = await api(`/api/video/${CUR_VID.id}`);
+    _renderDetailUI();
+    tg.HapticFeedback.notificationOccurred("success");
+    alert("🎉 সব পার্ট একসাথে আনলক হয়েছে! এখন যেকোনো পার্টে Get Video চাপুন।");
+  } catch (e) { alert(e.message); }
+}
+
+function clickUnlock(partNum) {
   CUR_PART = partNum;
+  const p = CUR_VID.parts.find(x => x.part_num === partNum);
   history.pushState({ view: "modal" }, "");
-  document.getElementById("unlockPartName").innerText = `${CUR_VID.title} - ${title}`;
+  document.getElementById("unlockPartName").innerText = `${CUR_VID.title} - ${p ? p.title : ''}`;
   document.getElementById("antiCheatMsg").classList.add("hidden");
   document.getElementById("adOptionsBox").classList.remove("hidden");
   document.getElementById("timerBox").classList.add("hidden");
@@ -479,47 +679,87 @@ function clickUnlock(partNum, title) {
   const dirBtn = document.getElementById("btnDirect");
   dirBtn.classList.toggle("hidden", !CONFIG.has_direct_links);
   dirBtn.innerText = `🔗 বিজ্ঞাপন দেখে আনলক (${CONFIG.ad_timer} সেকেন্ড)`;
+  document.getElementById("btnShareUnlock").classList.toggle("hidden", !CONFIG.share_unlock_enabled);
   document.getElementById("unlockModal").classList.remove("hidden");
 }
 
+// Smart Ad-Waterfall: Monetag -> Auto Fallback to Direct Link
 function startMonetagAd() {
   const fn = window[`show_${CONFIG.monetag_zone_id}`];
   if (typeof fn === "function") {
-    fn().then(() => deliverVideo(CUR_PART, "ad")).catch(() => alert("বিজ্ঞাপনটি সম্পূর্ণ দেখুন!"));
+    fn()
+      .then(() => deliverVideo(CUR_PART, "ad"))
+      .catch(() => {
+        if (CONFIG.has_direct_links) startDirectAd(true);
+        else alert("⚠️ বিজ্ঞাপনটি সম্পূর্ণ দেখুন!");
+      });
   } else {
-    alert("Monetag অ্যাড লোড হয়নি, Direct Link চেষ্টা করুন।");
+    if (CONFIG.has_direct_links) startDirectAd(true);
+    else alert("Monetag অ্যাড লোড হয়নি (AdBlocker বন্ধ করুন)।");
   }
 }
 
-async function startDirectAd() {
-  const res = await api("/api/unlock/direct-link", "POST", { initData });
-  adRequiredSec = res.timer;
+async function startDirectAd(isFallback=false) {
+  try {
+    const res = await api("/api/unlock/direct-link", "POST", { initData });
+    adRequiredSec = res.timer;
+    adStartTime = Date.now();
+    adActive = true;
+    if (isFallback) {
+      const msg = document.getElementById("antiCheatMsg");
+      msg.innerText = "⚡ Monetag লোড না হওয়ায় অটোমেটিক ব্যাকআপ বিজ্ঞাপন চালু হয়েছে!";
+      msg.classList.remove("hidden");
+    } else {
+      document.getElementById("antiCheatMsg").classList.add("hidden");
+    }
+    document.getElementById("adOptionsBox").classList.add("hidden");
+    document.getElementById("timerBox").classList.remove("hidden");
+    document.getElementById("timerSec").innerText = adRequiredSec + "s";
+    document.getElementById("timerHint").innerText = "বিজ্ঞাপনের পেজে নির্ধারিত সময় অপেক্ষা করে তারপর এখানে ফিরে আসুন। আগে ফিরে আসলে আনলক হবে না!";
+
+    tg.openLink(res.url);
+
+    clearInterval(adTimerInterval);
+    adTimerInterval = setInterval(() => {
+      if (!adActive) return;
+      const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
+      const left = Math.max(0, adRequiredSec - elapsed);
+      document.getElementById("timerSec").innerText = left + "s";
+      if (left === 0 && !document.hidden) {
+        adActive = false;
+        clearInterval(adTimerInterval);
+        deliverVideo(CUR_PART, "direct");
+      }
+    }, 500);
+  } catch (e) { alert(e.message); }
+}
+
+function startShareUnlock() {
   adStartTime = Date.now();
-  adActive = true;
+  shareActive = true;
   document.getElementById("antiCheatMsg").classList.add("hidden");
   document.getElementById("adOptionsBox").classList.add("hidden");
   document.getElementById("timerBox").classList.remove("hidden");
-  document.getElementById("timerSec").innerText = adRequiredSec + "s";
-
-  tg.openLink(res.url);
+  document.getElementById("timerSec").innerText = "5s";
+  document.getElementById("timerHint").innerText = "বন্ধু বা গ্রুপে শেয়ার করার পর এখানে ফিরে আসুন...";
+  shareViralVideo();
 
   clearInterval(adTimerInterval);
+  let left = 5;
   adTimerInterval = setInterval(() => {
-    if (!adActive) return;
-    const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
-    const left = Math.max(0, adRequiredSec - elapsed);
+    if (!shareActive) return;
+    left = Math.max(0, 5 - Math.floor((Date.now() - adStartTime) / 1000));
     document.getElementById("timerSec").innerText = left + "s";
     if (left === 0 && !document.hidden) {
-      adActive = false;
+      shareActive = false;
       clearInterval(adTimerInterval);
-      deliverVideo(CUR_PART, "direct");
+      deliverVideo(CUR_PART, "share");
     }
   }, 500);
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (!adActive) return;
-  if (!document.hidden) {
+  if (!document.hidden && adActive) {
     const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
     if (elapsed < adRequiredSec) {
       adActive = false;
@@ -527,13 +767,21 @@ document.addEventListener("visibilitychange", () => {
       document.getElementById("timerBox").classList.add("hidden");
       document.getElementById("adOptionsBox").classList.remove("hidden");
       const msg = document.getElementById("antiCheatMsg");
-      msg.innerText = `⚠️ আপনি ${elapsed} সেকেন্ডেই ফিরে এসেছেন! ভিডিও আনলক করতে বিজ্ঞাপনের পেজে অন্তত ${adRequiredSec} সেকেন্ড অপেক্ষা করুন।`;
+      msg.innerText = `⚠️ আপনি ${elapsed} সেকেন্ডেই ফিরে এসেছেন! বিজ্ঞাপনের পেজে অন্তত ${adRequiredSec} সেকেন্ড অপেক্ষা করুন।`;
       msg.classList.remove("hidden");
       tg.HapticFeedback.notificationOccurred("error");
     } else {
       adActive = false;
       clearInterval(adTimerInterval);
       deliverVideo(CUR_PART, "direct");
+    }
+  }
+  if (!document.hidden && shareActive) {
+    const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
+    if (elapsed >= 4) {
+      shareActive = false;
+      clearInterval(adTimerInterval);
+      deliverVideo(CUR_PART, "share");
     }
   }
 });
@@ -556,8 +804,73 @@ async function deliverVideo(partNum, method) {
 
 function _closeUnlockUI() {
   adActive = false;
+  shareActive = false;
   clearInterval(adTimerInterval);
   document.getElementById("unlockModal").classList.add("hidden");
+}
+
+// Video Request Modal
+function openRequestModal() {
+  history.pushState({ view: "modal" }, "");
+  document.getElementById("reqTitleInput").value = "";
+  document.getElementById("requestModal").classList.remove("hidden");
+}
+async function submitRequest() {
+  const title = document.getElementById("reqTitleInput").value.trim();
+  try {
+    await api("/api/request-video", "POST", { initData, title });
+    goBackOneStep();
+    alert("✅ আপনার ভিডিও রিকোয়েস্ট পাঠানো হয়েছে!");
+  } catch (e) { alert(e.message); }
+}
+
+// Support Modal with Client-side Image Compression
+function openSupportModal() {
+  history.pushState({ view: "modal" }, "");
+  supPhotoBase64 = "";
+  document.getElementById("supMsgInput").value = "";
+  document.getElementById("supFileLabel").innerText = "📷 স্ক্রিনশট / ছবি যুক্ত করুন (ঐচ্ছিক)";
+  document.getElementById("supportModal").classList.remove("hidden");
+}
+
+function previewSupportPhoto() {
+  const file = document.getElementById("supPhotoInput").files[0];
+  if (!file) return;
+  document.getElementById("supFileLabel").innerText = "⏳ ছবি প্রসেসিং হচ্ছে...";
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const maxDim = 900;
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        const r = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * r); h = Math.round(h * r);
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      supPhotoBase64 = canvas.toDataURL("image/jpeg", 0.72);
+      document.getElementById("supFileLabel").innerText = "✅ ছবি যুক্ত হয়েছে (" + file.name.slice(0, 18) + ")";
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitSupport() {
+  const btn = document.getElementById("supSendBtn");
+  btn.disabled = true; btn.innerText = "পাঠানো হচ্ছে...";
+  try {
+    await api("/api/support", "POST", {
+      initData,
+      message: document.getElementById("supMsgInput").value.trim(),
+      photo_base64: supPhotoBase64
+    });
+    goBackOneStep();
+    alert("✅ আপনার মেসেজ অ্যাডমিনের কাছে পাঠানো হয়েছে! বটের ইনবক্সে উত্তর পাবেন।");
+  } catch (e) { alert(e.message); }
+  btn.disabled = false; btn.innerText = "📤 মেসেজ পাঠান";
 }
 
 async function doCheckin() {
