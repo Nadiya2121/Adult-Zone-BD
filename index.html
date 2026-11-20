@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="bn" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>VideoVault</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #090b10; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(20, 24, 36, 0.78); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.08); }
+    .rgb-card { position: relative; border-radius: 14px; overflow: hidden; background: #121622; }
+    .rgb-card::before {
+      content: ""; position: absolute; inset: -1.5px; z-index: -1; border-radius: 15px;
+      background: linear-gradient(45deg, #ff007f, #7928ca, #00d4ff, #00ff88);
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="pb-20 select-none">
+
+  <!-- Top Navbar -->
+  <header class="sticky top-0 z-40 glass px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="w-8 h-8 rounded-lg bg-gradient-to-tr from-pink-500 to-cyan-400 flex items-center justify-center font-bold text-black">V</span>
+      <h1 id="appTitle" class="font-bold text-lg tracking-wide bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">VideoVault</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="vipBadge" class="hidden px-2.5 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-black">👑 VIP</span>
+      <button onclick="openProfile()" class="px-3 py-1 rounded-full bg-white/10 text-xs font-semibold flex items-center gap-1">
+        🪙 <span id="coinCount">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Search Bar -->
+  <div class="px-4 mt-3">
+    <input id="searchInput" oninput="debounceSearch()" type="text" placeholder="🔍 ভিডিওর নাম লিখে খুঁজুন..."
+      class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-cyan-400" />
+  </div>
+
+  <!-- Home View -->
+  <main id="homeView" class="px-4 mt-4 space-y-6">
+    <section id="trendingSection" class="hidden">
+      <h2 class="text-sm font-bold text-amber-400 mb-2.5 flex items-center gap-1.5">🔥 ২৪ ঘণ্টার টপ ভিডিও (Trending)</h2>
+      <div id="trendingList" class="flex gap-3 overflow-x-auto no-scrollbar pb-1"></div>
+    </section>
+
+    <section>
+      <h2 class="text-sm font-bold text-cyan-400 mb-2.5">🎬 সর্বশেষ ভিডিও</h2>
+      <div id="latestGrid" class="grid grid-cols-2 gap-3"></div>
+      <button id="loadMoreBtn" onclick="loadMore()" class="hidden w-full mt-4 py-2.5 rounded-xl bg-white/10 text-xs font-semibold">আরও দেখুন</button>
+    </section>
+  </main>
+
+  <!-- Video Detail & Parts View -->
+  <main id="detailView" class="hidden px-4 mt-4 space-y-4">
+    <button onclick="showHome()" class="text-xs text-cyan-400 font-semibold">← হোমে ফিরে যান</button>
+    <div class="rounded-2xl overflow-hidden border border-white/10 bg-[#121622]">
+      <img id="detThumb" class="w-full aspect-video object-cover" />
+      <div class="p-3.5">
+        <h2 id="detTitle" class="font-bold text-base"></h2>
+        <p id="detMeta" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+    </div>
+    <div id="partTabs" class="flex gap-2 overflow-x-auto no-scrollbar"></div>
+    <div id="partsList" class="space-y-2.5"></div>
+  </main>
+
+  <!-- Profile & VIP Modal -->
+  <div id="profileModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+    <div class="glass w-full max-w-md rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-lg">👤 প্রোফাইল ও কয়েন</h3>
+        <button onclick="closeProfile()" class="text-gray-400 text-xl">&times;</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="p-3 rounded-xl bg-white/5">
+          <div class="text-xs text-gray-400">আপনার কয়েন</div>
+          <div id="profCoins" class="text-xl font-bold text-amber-400 mt-1">0</div>
+        </div>
+        <div class="p-3 rounded-xl bg-white/5">
+          <div class="text-xs text-gray-400">VIP স্ট্যাটাস</div>
+          <div id="profVip" class="text-sm font-bold text-emerald-400 mt-1.5">Free User</div>
+        </div>
+      </div>
+      <button onclick="doCheckin()" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-black">🎁 ডেইলি চেক-ইন (+কয়েন)</button>
+      <button onclick="buyVip()" id="buyVipBtn" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black">👑 ১ দিনের VIP কিনুন (50 কয়েন)</button>
+      <div class="p-3 rounded-xl bg-white/5 space-y-2">
+        <div class="text-xs text-gray-300 font-semibold">🔗 বন্ধুদের ইনভাইট করে কয়েন আয় করুন:</div>
+        <div class="flex gap-2">
+          <input id="refLinkInput" readonly class="flex-1 bg-black/40 px-2.5 py-1.5 rounded-lg text-xs text-gray-300" />
+          <button onclick="copyRef()" class="px-3 py-1.5 rounded-lg bg-cyan-500 text-black text-xs font-bold">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unlock Options / Ad Timer Modal -->
+  <div id="unlockModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-3.5 text-center">
+      <h3 class="font-bold text-base">🔓 ভিডিও আনলক করুন</h3>
+      <p id="unlockPartName" class="text-xs text-cyan-400 font-semibold"></p>
+
+      <!-- Force Join Box -->
+      <div id="forceJoinBox" class="hidden space-y-2 text-left">
+        <p class="text-xs text-rose-400 font-semibold">ভিডিও দেখতে নিচের চ্যানেলগুলোতে জয়েন করুন:</p>
+        <div id="forceChannelBtns" class="space-y-1.5"></div>
+        <button onclick="verifyJoin()" class="w-full py-2.5 rounded-xl bg-emerald-500 text-black font-bold text-xs mt-2">✅ জয়েন করেছি (Verify)</button>
+      </div>
+
+      <!-- Ad Options Box -->
+      <div id="adOptionsBox" class="space-y-2.5">
+        <button id="btnMonetag" onclick="startMonetagAd()" class="hidden w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white">📺 বিজ্ঞাপন দেখে আনলক (Monetag)</button>
+        <button id="btnDirect" onclick="startDirectAd()" class="hidden w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white">🔗 ডাইরেক্ট লিংক বিজ্ঞাপন দেখে আনলক</button>
+        <button onclick="unlockWithCoin()" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-400 to-orange-500 text-black">🪙 ১০ কয়েন দিয়ে আনলক</button>
+      </div>
+
+      <!-- Countdown Box -->
+      <div id="timerBox" class="hidden py-4 space-y-3">
+        <div class="text-3xl font-extrabold text-amber-400" id="timerSec">15s</div>
+        <p class="text-xs text-gray-300">বিজ্ঞাপন ভেরিফাই হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...</p>
+      </div>
+
+      <button onclick="closeUnlock()" class="text-xs text-gray-400 pt-2">বাতিল করুন</button>
+    </div>
+  </div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.expand();
+const initData = tg.initData;
+let USER = {}, CONFIG = {}, CUR_VID = null, CUR_PART = null, page = 1, searchTimer = null;
+let adStartTime = 0, adRequiredSec = 15, adTimerInterval = null;
+
+async function api(url, method="GET", body=null) {
+  const opts = { method, headers: { "Content-Type": "application/json", "x-init-data": initData } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Error");
+  return data;
+}
+
+async function init() {
+  try {
+    const res = await api("/api/auth", "POST", { initData });
+    USER = res.user; CONFIG = res.config;
+    document.getElementById("appTitle").innerText = CONFIG.app_name;
+    updateUserUI();
+
+    if (CONFIG.monetag_zone_id) {
+      const s = document.createElement("script");
+      s.src = "//libtl.com/sdk.js";
+      s.setAttribute("data-zone", CONFIG.monetag_zone_id);
+      s.setAttribute("data-sdk", `show_${CONFIG.monetag_zone_id}`);
+      document.head.appendChild(s);
+    }
+
+    await loadVideos(true);
+    const startParam = tg.initDataUnsafe?.start_param || "";
+    if (startParam.startsWith("vid_")) openVideo(startParam.replace("vid_", ""));
+  } catch (e) { console.error(e); }
+}
+
+function updateUserUI() {
+  document.getElementById("coinCount").innerText = USER.coins;
+  document.getElementById("profCoins").innerText = USER.coins;
+  document.getElementById("refLinkInput").value = USER.ref_link || "";
+  document.getElementById("buyVipBtn").innerText = `👑 ১ দিনের VIP কিনুন (${CONFIG.vip_coin_price} কয়েন)`;
+  if (USER.is_vip) {
+    document.getElementById("vipBadge").classList.remove("hidden");
+    document.getElementById("profVip").innerText = "👑 Active VIP";
+  }
+}
+
+async function loadVideos(reset=false) {
+  if (reset) page = 1;
+  const q = document.getElementById("searchInput").value.trim();
+  const data = await api(`/api/videos?q=${encodeURIComponent(q)}&page=${page}`);
+
+  if (page === 1 && data.trending.length > 0 && !q) {
+    document.getElementById("trendingSection").classList.remove("hidden");
+    document.getElementById("trendingList").innerHTML = data.trending.map(v => `
+      <div onclick="openVideo('${v.id}')" class="min-w-[170px] rgb-card p-1 cursor-pointer">
+        <img src="${v.thumbnail || 'https://via.placeholder.com/320x180'}" class="w-full aspect-video object-cover rounded-lg"/>
+        <div class="p-2">
+          <div class="text-xs font-bold line-clamp-1">${v.title}</div>
+          <div class="text-[10px] text-amber-400 mt-0.5">🔥 ${v.views} Views • ${v.parts_count} Parts</div>
+        </div>
+      </div>`).join("");
+  } else if (q || page === 1) {
+    document.getElementById("trendingSection").classList.add("hidden");
+  }
+
+  const grid = document.getElementById("latestGrid");
+  if (reset) grid.innerHTML = "";
+  grid.innerHTML += data.latest.map(v => `
+    <div onclick="openVideo('${v.id}')" class="rgb-card p-1 cursor-pointer">
+      <div class="relative">
+        <img src="${v.thumbnail || 'https://via.placeholder.com/320x180'}" class="w-full aspect-video object-cover rounded-lg"/>
+        <span class="absolute bottom-1 right-1 bg-black/75 text-[10px] px-1.5 py-0.5 rounded font-semibold">${v.parts_count} Parts</span>
+      </div>
+      <div class="p-2">
+        <div class="text-xs font-bold line-clamp-2">${v.title}</div>
+        <div class="text-[10px] text-gray-400 mt-1">👁 ${v.views} • ${v.created_at}</div>
+      </div>
+    </div>`).join("");
+
+  document.getElementById("loadMoreBtn").classList.toggle("hidden", data.latest.length < 16);
+}
+
+function loadMore() { page++; loadVideos(false); }
+function debounceSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadVideos(true), 400); }
+
+async function openVideo(id) {
+  tg.HapticFeedback.impactOccurred("light");
+  const vid = await api(`/api/video/${id}`);
+  CUR_VID = vid;
+  document.getElementById("homeView").classList.add("hidden");
+  document.getElementById("detailView").classList.remove("hidden");
+  document.getElementById("detThumb").src = vid.thumbnail || "https://via.placeholder.com/640x360";
+  document.getElementById("detTitle").innerText = vid.title;
+  document.getElementById("detMeta").innerText = `👁 ${vid.views} Views • 🎞️ ${vid.parts.length} Parts`;
+
+  // Range tabs for 50-100 parts
+  const tabs = document.getElementById("partTabs");
+  tabs.innerHTML = "";
+  const chunkSize = 20;
+  for (let i = 0; i < vid.parts.length; i += chunkSize) {
+    const start = i + 1, end = Math.min(i + chunkSize, vid.parts.length);
+    tabs.innerHTML += `<button onclick="renderParts(${i}, ${end})" class="px-3 py-1.5 rounded-lg bg-white/10 text-xs font-semibold whitespace-nowrap">Parts ${start}-${end}</button>`;
+  }
+  renderParts(0, Math.min(chunkSize, vid.parts.length));
+}
+
+function renderParts(start, end) {
+  const slice = CUR_VID.parts.slice(start, end);
+  document.getElementById("partsList").innerHTML = slice.map(p => `
+    <div class="glass rounded-xl p-3 flex items-center justify-between">
+      <div>
+        <div class="text-sm font-bold">${p.title}</div>
+        <div class="text-[11px] text-gray-400">${p.size} MB</div>
+      </div>
+      ${(p.unlocked || USER.is_vip)
+        ? `<button onclick="deliverVideo(${p.part_num}, 'vip')" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 text-black text-xs font-bold">📥 Get Video</button>`
+        : `<button onclick="clickUnlock(${p.part_num}, '${p.title}')" class="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 text-white text-xs font-bold">🔒 Unlock</button>`
+      }
+    </div>`).join("");
+}
+
+function showHome() {
+  document.getElementById("detailView").classList.add("hidden");
+  document.getElementById("homeView").classList.remove("hidden");
+}
+
+async function clickUnlock(partNum, title) {
+  CUR_PART = partNum;
+  document.getElementById("unlockPartName").innerText = `${CUR_VID.title} - ${title}`;
+  document.getElementById("unlockModal").classList.remove("hidden");
+  document.getElementById("timerBox").classList.add("hidden");
+  await verifyJoin();
+}
+
+async function verifyJoin() {
+  const res = await api("/api/check-join", "POST", { initData });
+  if (!res.joined) {
+    document.getElementById("forceJoinBox").classList.remove("hidden");
+    document.getElementById("adOptionsBox").classList.add("hidden");
+    document.getElementById("forceChannelBtns").innerHTML = res.missing.map(c =>
+      `<a href="${c.url}" target="_blank" class="block w-full py-2 px-3 rounded-lg bg-white/10 text-xs font-bold text-cyan-300">📢 ${c.name} (Join)</a>`
+    ).join("");
+  } else {
+    document.getElementById("forceJoinBox").classList.add("hidden");
+    document.getElementById("adOptionsBox").classList.remove("hidden");
+    document.getElementById("btnMonetag").classList.toggle("hidden", !CONFIG.monetag_zone_id);
+    document.getElementById("btnDirect").classList.toggle("hidden", !CONFIG.has_direct_links);
+  }
+}
+
+function startMonetagAd() {
+  const fn = window[`show_${CONFIG.monetag_zone_id}`];
+  if (typeof fn === "function") {
+    fn().then(() => deliverVideo(CUR_PART, "ad")).catch(() => alert("বিজ্ঞাপনটি সম্পূর্ণ দেখুন!"));
+  } else {
+    alert("Monetag অ্যাড লোড হয়নি, Direct Link চেষ্টা করুন।");
+  }
+}
+
+async function startDirectAd() {
+  const res = await api("/api/unlock/direct-link", "POST", { initData });
+  adRequiredSec = res.timer;
+  adStartTime = Date.now();
+  tg.openLink(res.url);
+
+  document.getElementById("adOptionsBox").classList.add("hidden");
+  document.getElementById("timerBox").classList.remove("hidden");
+
+  clearInterval(adTimerInterval);
+  adTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - adStartTime) / 1000);
+    const left = Math.max(0, adRequiredSec - elapsed);
+    document.getElementById("timerSec").innerText = left + "s";
+    if (left === 0) {
+      clearInterval(adTimerInterval);
+      deliverVideo(CUR_PART, "ad");
+    }
+  }, 500);
+}
+
+async function unlockWithCoin() {
+  await deliverVideo(CUR_PART, "coin");
+}
+
+async function deliverVideo(partNum, method) {
+  try {
+    const res = await api("/api/unlock/complete", "POST", {
+      initData, video_id: CUR_VID.id, part_num: partNum, method
+    });
+    tg.HapticFeedback.notificationOccurred("success");
+    closeUnlock();
+    tg.openTelegramLink(res.bot_url);
+    tg.close();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function closeUnlock() { clearInterval(adTimerInterval); document.getElementById("unlockModal").classList.add("hidden"); }
+function openProfile() { document.getElementById("profileModal").classList.remove("hidden"); }
+function closeProfile() { document.getElementById("profileModal").classList.add("hidden"); }
+
+async function doCheckin() {
+  try {
+    const res = await api("/api/checkin", "POST", { initData });
+    USER.coins = res.coins; updateUserUI();
+    alert(`🎉 অভিনন্দন! +${res.reward} কয়েন পেয়েছেন!`);
+  } catch (e) { alert(e.message); }
+}
+
+async function buyVip() {
+  try {
+    const res = await api("/api/buy-vip", "POST", { initData });
+    USER.coins = res.coins; USER.is_vip = true; updateUserUI();
+    alert("👑 অভিনন্দন! ১ দিনের VIP অ্যাক্টিভ হয়েছে!");
+  } catch (e) { alert(e.message); }
+}
+
+function copyRef() {
+  navigator.clipboard.writeText(document.getElementById("refLinkInput").value);
+  alert("✅ রেফারেল লিংক কপি হয়েছে!");
+}
+
+init();
+</script>
+</body>
+</html>
